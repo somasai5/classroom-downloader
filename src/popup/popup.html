@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Classroom Suite</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <img src="../icons/icon.svg" alt="Logo" class="logo">
+        <div>
+          <h1>Classroom Suite</h1>
+          <span class="version-tag">v2.0 • 100% Client-Side</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Stats Card -->
+    <section class="stats-card">
+      <div class="stat-item">
+        <span class="stat-number" id="stat-files">0</span>
+        <span class="stat-label">Files Saved</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-number" id="stat-zips">0</span>
+        <span class="stat-label">ZIPs Created</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-number" id="stat-size">0 MB</span>
+        <span class="stat-label">Saved Offline</span>
+      </div>
+    </section>
+
+    <!-- Preferences -->
+    <section class="settings-section">
+      <h3>Preferences</h3>
+
+      <div class="setting-row">
+        <label for="download-mode">Package Mode</label>
+        <select id="download-mode">
+          <option value="zip">Structured .ZIP Archive (Recommended)</option>
+          <option value="folder">Organized Subfolders</option>
+          <option value="direct">Direct Individual Files</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <label for="slides-format">Slides Conversion</label>
+        <select id="slides-format">
+          <option value="pdf">PDF (Printable & Annotated)</option>
+          <option value="pptx">PowerPoint (.pptx)</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <label for="docs-format">Docs Conversion</label>
+        <select id="docs-format">
+          <option value="pdf">PDF</option>
+          <option value="docx">Word (.docx)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Privacy Banner -->
+    <div class="privacy-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      <span>Zero Servers • Zero API Keys • 100% Private</span>
+    </div>
+
+    <!-- Footer -->
+    <footer class="popup-footer">
+      <button id="btn-open-classroom" class="btn btn-primary">Open Google Classroom</button>
+      <button id="btn-reset-stats" class="btn btn-text">Reset Stats</button>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
