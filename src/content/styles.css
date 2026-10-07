@@ -1,43 +1,52 @@
-/* Classroom Suite Injected Styles */
-
+/* Classroom Suite Styles */
 :root {
   --cqd-primary: #6366f1;
   --cqd-primary-hover: #4f46e5;
-  --cqd-success: #10b981;
-  --cqd-warning: #f59e0b;
   --cqd-surface: #ffffff;
-  --cqd-text: #1f2937;
-  --cqd-text-muted: #6b7280;
-  --cqd-border: #e5e7eb;
   --cqd-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   --cqd-radius: 12px;
 }
 
-/* Floating Action Bar on Post */
+/* Master Floating Bottom-Right Toolbar */
+.cqd-master-bar {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 10px 18px;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  z-index: 999999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: cqdSlideUp 0.3s ease-out;
+}
+
+.cqd-master-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
 .cqd-action-container {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
-  margin-bottom: 8px;
+  margin: 8px 0;
   padding: 6px 12px;
   background: rgba(243, 244, 246, 0.95);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(209, 213, 219, 0.7);
   border-radius: 10px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.04);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   z-index: 10;
-  transition: all 0.2s ease;
 }
 
-.cqd-action-container:hover {
-  background: #ffffff;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.4);
-}
-
-/* Action Buttons */
 .cqd-btn {
   display: inline-flex;
   align-items: center;
@@ -48,9 +57,9 @@
   border-radius: 8px;
   border: none;
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   outline: none;
   user-select: none;
+  transition: all 0.2s;
 }
 
 .cqd-btn-primary {
@@ -60,13 +69,8 @@
 }
 
 .cqd-btn-primary:hover {
+  filter: brightness(1.1);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.45);
-  filter: brightness(1.05);
-}
-
-.cqd-btn-primary:active {
-  transform: translateY(0);
 }
 
 .cqd-btn-secondary {
@@ -77,20 +81,15 @@
 
 .cqd-btn-secondary:hover {
   background: #f9fafb;
-  border-color: #9ca3af;
 }
 
-/* Badges */
 .cqd-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   font-size: 11px;
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .cqd-badge-updated {
@@ -113,42 +112,7 @@
   font-size: 11px;
 }
 
-/* Global Floating Bottom Selection Bar */
-.cqd-floating-tray {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  background: #0f172a;
-  color: #ffffff;
-  padding: 12px 20px;
-  border-radius: 50px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
-  z-index: 999990;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  animation: cqdSlideUp 0.25s ease-out;
-}
-
-.cqd-floating-tray span {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* Attachment Direct Checkbox Overlay */
-.cqd-att-checkbox {
-  position: relative;
-  z-index: 5;
-  margin-right: 6px;
-  width: 18px;
-  height: 18px;
-  accent-color: #4f46e5;
-  cursor: pointer;
-}
-
-/* Modal Overlay */
+/* Modals */
 .cqd-modal-overlay {
   position: fixed;
   top: 0;
@@ -160,8 +124,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 999999;
-  animation: cqdFadeIn 0.2s ease-out;
+  z-index: 9999999;
 }
 
 .cqd-modal-card {
@@ -176,7 +139,6 @@
   border: 1px solid #e2e8f0;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  animation: cqdSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cqd-modal-header {
@@ -218,12 +180,6 @@
   border-radius: 8px;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
-  transition: all 0.15s ease;
-}
-
-.cqd-file-item:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
 }
 
 .cqd-file-item label {
@@ -235,9 +191,6 @@
   color: #1e293b;
   cursor: pointer;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cqd-file-icon {
@@ -247,7 +200,6 @@
 .cqd-file-meta {
   font-size: 12px;
   color: #64748b;
-  font-weight: 500;
   margin-left: 8px;
 }
 
@@ -260,12 +212,7 @@
   justify-content: space-between;
 }
 
-@keyframes cqdFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @keyframes cqdSlideUp {
-  from { transform: translateY(16px); opacity: 0; }
+  from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }

@@ -1,14 +1,36 @@
-// Classroom Suite - Injected UI Components & Modals
-// 100% Client-Side
-
+// Classroom Suite - Injected UI & Modals
 window.ClassroomUI = {
-  // Render Action Bar for a Classroom Post
+  // Inject the floating master control bar
+  renderMasterFloatingBar(onDownloadAllPage, onSelectAllPage) {
+    let bar = document.getElementById('cqd-master-floating-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'cqd-master-floating-bar';
+      bar.className = 'cqd-master-bar';
+      bar.innerHTML = `
+        <div class="cqd-master-brand">
+          <span style="font-size:16px;">🎓</span>
+          <span><b>Classroom Suite</b></span>
+        </div>
+        <button id="cqd-master-download-all" class="cqd-btn cqd-btn-primary" style="padding:6px 14px; font-size:12px;">
+          📦 Download All Page Materials (.ZIP)
+        </button>
+        <button id="cqd-master-scan" class="cqd-btn cqd-btn-secondary" style="padding:6px 10px; font-size:12px;">
+          ⚡ Select Materials
+        </button>
+      `;
+      document.body.appendChild(bar);
+
+      bar.querySelector('#cqd-master-download-all').onclick = onDownloadAllPage;
+      bar.querySelector('#cqd-master-scan').onclick = onSelectAllPage;
+    }
+  },
+
   createActionBar(data, onDownloadAll, onQuickPick, onViewDiff) {
     const container = document.createElement('div');
     container.className = 'cqd-action-container';
     container.setAttribute('data-cqd-post-id', data.id);
 
-    // Download All Button
     const btnDownloadAll = document.createElement('button');
     btnDownloadAll.className = 'cqd-btn cqd-btn-primary';
     btnDownloadAll.innerHTML = `
@@ -25,7 +47,6 @@ window.ClassroomUI = {
       onDownloadAll(data, btnDownloadAll);
     };
 
-    // Select Files (Quick Pick) Button
     const btnQuickPick = document.createElement('button');
     btnQuickPick.className = 'cqd-btn cqd-btn-secondary';
     btnQuickPick.innerHTML = `
@@ -43,11 +64,10 @@ window.ClassroomUI = {
     container.appendChild(btnDownloadAll);
     container.appendChild(btnQuickPick);
 
-    // If post was modified, show "Updated" badge & Diff button
     if (data.isUpdated) {
       const badge = document.createElement('span');
       badge.className = 'cqd-badge cqd-badge-updated';
-      badge.innerHTML = `?? Edited`;
+      badge.innerHTML = '🕒 Edited';
       badge.style.cursor = 'pointer';
       badge.title = 'Click to see what changed';
       badge.onclick = (e) => {
@@ -60,14 +80,13 @@ window.ClassroomUI = {
     if (data.isDownloaded) {
       const badge = document.createElement('span');
       badge.className = 'cqd-badge cqd-badge-downloaded';
-      badge.innerHTML = `? Saved`;
+      badge.innerHTML = '✓ Saved';
       container.appendChild(badge);
     }
 
     return container;
   },
 
-  // Modal for Quick Pick & Selective Downloads
   showQuickPickModal(data, onConfirm) {
     this.closeModal();
 
@@ -78,14 +97,13 @@ window.ClassroomUI = {
     const card = document.createElement('div');
     card.className = 'cqd-modal-card';
 
-    // Header
     card.innerHTML = `
       <div class="cqd-modal-header">
         <div class="cqd-modal-title">
-          <span>??</span>
+          <span>📦</span>
           <span>Select Files: <b>${this.escapeHtml(data.title || 'Assignment')}</b></span>
         </div>
-        <button id="cqd-close-btn" style="background:none; border:none; font-size:18px; cursor:pointer; color:#64748b;">?</button>
+        <button id="cqd-close-btn" style="background:none; border:none; font-size:18px; cursor:pointer; color:#64748b;">✕</button>
       </div>
       <div class="cqd-modal-body">
         <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap: wrap;">
@@ -118,12 +136,10 @@ window.ClassroomUI = {
     const fileListEl = card.querySelector('#cqd-modal-file-list');
     const selectedCountEl = card.querySelector('#cqd-selected-count');
 
-    // Populate Files with Checkboxes
     data.attachments.forEach((file, index) => {
       const item = document.createElement('div');
       item.className = 'cqd-file-item';
       item.setAttribute('data-ext', file.extension || 'other');
-
       const icon = this.getFileIcon(file.extension);
 
       item.innerHTML = `
@@ -143,7 +159,6 @@ window.ClassroomUI = {
       card.querySelector('#cqd-modal-download-zip').disabled = (checked === 0);
     };
 
-    // Select / Deselect All
     card.querySelector('#cqd-select-all').onclick = () => {
       card.querySelectorAll('.cqd-file-check').forEach(chk => chk.checked = true);
       updateCount();
@@ -154,7 +169,6 @@ window.ClassroomUI = {
       updateCount();
     };
 
-    // Filter Buttons
     card.querySelectorAll('.cqd-filter-btn').forEach(btn => {
       btn.onclick = () => {
         const filter = btn.getAttribute('data-filter');
@@ -173,7 +187,6 @@ window.ClassroomUI = {
       chk.onchange = updateCount;
     });
 
-    // Close & Action Handlers
     card.querySelector('#cqd-close-btn').onclick = () => this.closeModal();
     card.querySelector('#cqd-modal-cancel').onclick = () => this.closeModal();
 
@@ -191,7 +204,6 @@ window.ClassroomUI = {
     };
   },
 
-  // Modal for Post Diffs / Edit History
   showDiffModal(data) {
     this.closeModal();
     const overlay = document.createElement('div');
@@ -203,10 +215,10 @@ window.ClassroomUI = {
     card.innerHTML = `
       <div class="cqd-modal-header">
         <div class="cqd-modal-title">
-          <span>??</span>
+          <span>🕒</span>
           <span>Update History: <b>${this.escapeHtml(data.title || 'Assignment')}</b></span>
         </div>
-        <button id="cqd-close-btn" style="background:none; border:none; font-size:18px; cursor:pointer; color:#64748b;">?</button>
+        <button id="cqd-close-btn" style="background:none; border:none; font-size:18px; cursor:pointer; color:#64748b;">✕</button>
       </div>
       <div class="cqd-modal-body">
         <p style="font-size:13px; color:#475569; margin-bottom:12px;">
@@ -230,33 +242,6 @@ window.ClassroomUI = {
     card.querySelector('#cqd-diff-close').onclick = () => this.closeModal();
   },
 
-  // Floating Bottom Selection Bar (when user selects files across multiple posts)
-  renderFloatingTray(selectedCount, onDownload, onClear) {
-    let tray = document.getElementById('cqd-floating-tray');
-    if (selectedCount === 0) {
-      if (tray) tray.remove();
-      return;
-    }
-
-    if (!tray) {
-      tray = document.createElement('div');
-      tray.id = 'cqd-floating-tray';
-      tray.className = 'cqd-floating-tray';
-      document.body.appendChild(tray);
-    }
-
-    tray.innerHTML = `
-      <span>?? <b>${selectedCount}</b> file${selectedCount > 1 ? 's' : ''} selected</span>
-      <div style="display:flex; gap:8px;">
-        <button id="cqd-tray-download" class="cqd-btn cqd-btn-primary" style="padding:6px 14px;">Download Selected (.ZIP)</button>
-        <button id="cqd-tray-clear" class="cqd-btn cqd-btn-secondary" style="background:rgba(255,255,255,0.15); color:#fff !important; border:none; padding:6px 10px;">Clear</button>
-      </div>
-    `;
-
-    tray.querySelector('#cqd-tray-download').onclick = onDownload;
-    tray.querySelector('#cqd-tray-clear').onclick = onClear;
-  },
-
   closeModal() {
     const existing = document.getElementById('cqd-active-modal');
     if (existing) existing.remove();
@@ -264,27 +249,27 @@ window.ClassroomUI = {
 
   getFileIcon(ext) {
     switch (ext) {
-      case 'pdf': return '??';
+      case 'pdf': return '📄';
       case 'doc':
       case 'docx':
-      case 'gdoc': return '??';
+      case 'gdoc': return '📝';
       case 'ppt':
       case 'pptx':
-      case 'gslides': return '??';
+      case 'gslides': return '📊';
       case 'xls':
       case 'xlsx':
-      case 'gsheet': return '??';
+      case 'gsheet': return '📈';
       case 'zip':
       case 'rar':
-      case '7z': return '???';
+      case '7z': return '🗄️';
       case 'jpg':
       case 'png':
-      case 'gif': return '???';
+      case 'gif': return '🖼️';
       case 'mp4':
-      case 'mov': return '??';
+      case 'mov': return '🎥';
       case 'link':
-      case 'url': return '??';
-      default: return '??';
+      case 'url': return '🔗';
+      default: return '📁';
     }
   },
 
