@@ -84,7 +84,8 @@
       window.ClassroomUI.renderMasterFloatingBar(
         handleDownloadAllPageDirect,
         handleDownloadAllPageZip,
-        handleSelectAllPageMaterials
+        handleSelectAllPageMaterials,
+        () => handleExpandAllPosts(document.getElementById('cqd-master-expand'))
       );
       updateMasterBarStatus();
     }
@@ -258,7 +259,68 @@
     return '0';
   }
 
+  function isSystemOrNavUrl(href, anchorEl) {
+    if (!href) return true;
+
+    // 1. Ignore links inside Google top bar, header, or navigation drawer
+    if (anchorEl && typeof anchorEl.closest === 'function') {
+      if (anchorEl.closest('header, nav, #gb, .gb_, [role="banner"], [role="navigation"], .app-bar, .drawer, [data-is-drawer="true"]')) {
+        return true;
+      }
+    }
+
+    try {
+      const base = (typeof window !== 'undefined' && window.location && window.location.href) ? window.location.href : 'http://localhost';
+      const url = new URL(href, base);
+      const host = url.hostname.toLowerCase();
+      const path = url.pathname.toLowerCase();
+
+      // 2. Ignore Google UI & navigation services
+      const ignoredHosts = [
+        'calendar.google.com',
+        'accounts.google.com',
+        'myaccount.google.com',
+        'support.google.com',
+        'policies.google.com',
+        'about.google',
+        'families.google.com',
+        'play.google.com',
+        'mail.google.com'
+      ];
+      if (ignoredHosts.some(h => host === h || host.endsWith('.' + h))) {
+        return true;
+      }
+
+      // 3. Ignore Google products / about launcher
+      if (host.includes('google.com') && (path.startsWith('/intl/') || path.startsWith('/products') || path.startsWith('/about'))) {
+        return true;
+      }
+
+      // 4. Ignore Classroom internal navigation (tabs, home, calendar)
+      if (host === 'classroom.google.com') {
+        if (!path.includes('/d/') && !path.includes('/file/')) {
+          return true;
+        }
+      }
+    } catch (e) {}
+
+    // 5. Ignore anchors with explicit system titles when not inside an actual attachment card
+    if (anchorEl) {
+      const text = ((anchorEl.innerText || (typeof anchorEl.getAttribute === 'function' && anchorEl.getAttribute('aria-label'))) || '').trim().toLowerCase();
+      const systemLabels = ['google calendar', 'google apps', 'class drive folder', 'google drive', 'calendar', 'open class folder'];
+      if (systemLabels.includes(text)) {
+        if (typeof anchorEl.closest === 'function' && !anchorEl.closest('.VBEdtc-Wvd9cc, .attachment-card, [data-stream-item-id]')) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   function resolveAttachmentLink(href, anchorEl, postTitle) {
+    if (isSystemOrNavUrl(href, anchorEl)) return null;
+
     let text = extractCleanAttachmentTitle(anchorEl);
     const authUser = getAuthUser(href);
 
@@ -423,19 +485,107 @@
   // Scan and gather all attachments on the entire page
   function getAllPageAttachments() {
     const allFiles = [];
-    document.querySelectorAll('a[href]').forEach((a) => {
-      const fileInfo = resolveAttachmentLink(a.href, a, 'Course Materials');
-      if (fileInfo && !allFiles.some(f => f.downloadUrl === fileInfo.downloadUrl)) {
-        allFiles.push(fileInfo);
-      }
+
+    // 1. Gather attachments from all detected course post containers
+    const postSelectors = [
+      '[data-stream-item-id]',
+      '[jscontroller="A2Lzbe"]',
+      '.VBEdtc-Wvd9cc',
+      '.ySjX5d',
+      '.onkcGd',
+      '.g-classroom-post',
+      '[role="listitem"]'
+    ];
+
+    const postElements = document.querySelectorAll(postSelectors.join(','));
+    postElements.forEach((postEl) => {
+      const postTitle = (parsePostData(postEl) || {}).title || 'Course Materials';
+      postEl.querySelectorAll('a[href]').forEach((a) => {
+        if (isSystemOrNavUrl(a.href, a)) return;
+        const fileInfo = resolveAttachmentLink(a.href, a, postTitle);
+        if (fileInfo && !allFiles.some(f => f.downloadUrl === fileInfo.downloadUrl)) {
+          allFiles.push(fileInfo);
+        }
+      });
     });
+
+    // 2. Fallback: If no posts matched, scan links inside main container, strictly excluding system/nav links
+    if (allFiles.length === 0) {
+      const mainContainer = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
+      mainContainer.querySelectorAll('a[href]').forEach((a) => {
+        if (isSystemOrNavUrl(a.href, a)) return;
+        const fileInfo = resolveAttachmentLink(a.href, a, 'Course Materials');
+        if (fileInfo && !allFiles.some(f => f.downloadUrl === fileInfo.downloadUrl)) {
+          allFiles.push(fileInfo);
+        }
+      });
+    }
+
     return allFiles;
   }
 
+  async function handleExpandAllPosts(btnElement) {
+    const originalText = btnElement ? btnElement.innerHTML : '';
+    if (btnElement) {
+      btnElement.disabled = true;
+      btnElement.innerHTML = '<span>⏳ Expanding...</span>';
+    }
+
+    const expandableSelectors = [
+      '[data-stream-item-id] [role="button"][aria-expanded="false"]',
+      '[data-stream-item-id][aria-expanded="false"]',
+      '.onkcGd [role="button"][aria-expanded="false"]',
+      '.onkcGd[aria-expanded="false"]',
+      '[jscontroller="A2Lzbe"][aria-expanded="false"]',
+      '[role="listitem"] [role="button"][aria-expanded="false"]',
+      '[role="listitem"][aria-expanded="false"]'
+    ];
+
+    let itemsToClick = [];
+    const elements = document.querySelectorAll(expandableSelectors.join(','));
+    elements.forEach(el => {
+      if (el.tagName === 'A' || el.classList.contains('cqd-btn') || el.classList.contains('cqd-file-dl-btn')) return;
+      itemsToClick.push(el);
+    });
+
+    // If specific aria-expanded targets were not found, click unexpanded stream cards
+    if (itemsToClick.length === 0) {
+      const cards = document.querySelectorAll('[data-stream-item-id], .onkcGd, [jscontroller="A2Lzbe"]');
+      cards.forEach(card => {
+        if (!card.querySelector('.cqd-action-container') && !card.querySelector('a[href*="drive.google.com"]')) {
+          const btn = card.querySelector('[role="button"]') || card.querySelector('.asQXV') || card.querySelector('.A65qq') || card;
+          if (btn && !itemsToClick.includes(btn)) itemsToClick.push(btn);
+        }
+      });
+    }
+
+    if (itemsToClick.length > 0) {
+      for (const item of itemsToClick) {
+        try {
+          item.click();
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 60));
+      }
+      await new Promise(r => setTimeout(r, 600));
+      scanAndInject();
+    }
+
+    if (btnElement) {
+      btnElement.disabled = false;
+      btnElement.innerHTML = originalText;
+    }
+  }
+
   async function handleDownloadAllPageDirect() {
-    const files = getAllPageAttachments();
+    let files = getAllPageAttachments();
     if (files.length === 0) {
-      alert('Classroom Suite: No downloadable attachments detected on this page yet. Please scroll or expand class topics.');
+      const expandBtn = document.getElementById('cqd-master-expand');
+      await handleExpandAllPosts(expandBtn);
+      files = getAllPageAttachments();
+    }
+
+    if (files.length === 0) {
+      alert('Classroom Suite: No downloadable attachments detected. If posts are collapsed, click on them to open or switch to the Classwork tab.');
       return;
     }
 
@@ -451,9 +601,15 @@
   }
 
   async function handleDownloadAllPageZip() {
-    const files = getAllPageAttachments();
+    let files = getAllPageAttachments();
     if (files.length === 0) {
-      alert('Classroom Suite: No downloadable attachments detected on this page yet. Please scroll or expand class topics.');
+      const expandBtn = document.getElementById('cqd-master-expand');
+      await handleExpandAllPosts(expandBtn);
+      files = getAllPageAttachments();
+    }
+
+    if (files.length === 0) {
+      alert('Classroom Suite: No downloadable attachments detected. If posts are collapsed, click on them to open or switch to the Classwork tab.');
       return;
     }
 
@@ -468,10 +624,16 @@
     await handleDownloadAllZip(masterData, btn || document.createElement('button'));
   }
 
-  function handleSelectAllPageMaterials() {
-    const files = getAllPageAttachments();
+  async function handleSelectAllPageMaterials() {
+    let files = getAllPageAttachments();
     if (files.length === 0) {
-      alert('Classroom Suite: No attachments found on current view.');
+      const expandBtn = document.getElementById('cqd-master-expand');
+      await handleExpandAllPosts(expandBtn);
+      files = getAllPageAttachments();
+    }
+
+    if (files.length === 0) {
+      alert('Classroom Suite: No attachments found on current view. If posts are collapsed, click to open them or switch to the Classwork tab.');
       return;
     }
 

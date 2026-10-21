@@ -98,6 +98,7 @@ async function runAllTests() {
     ctx.sanitize = sanitize;
     ctx.generateMockAttachmentContent = generateMockAttachmentContent;
     ctx.userSettings = userSettings;
+    ctx.isSystemOrNavUrl = isSystemOrNavUrl;
   `);
   evalFunc(ctx, mockWindow, mockDocument, mockMutationObserver);
 
@@ -237,6 +238,15 @@ async function runAllTests() {
     // Reset back to pdf defaults
     ctx.userSettings.slidesExportFormat = 'pdf';
     ctx.userSettings.docsExportFormat = 'pdf';
+  });
+
+  test('Google system UI and navigation links are strictly ignored', () => {
+    assert.strictEqual(ctx.isSystemOrNavUrl('https://calendar.google.com/calendar/u/0/r', null), true);
+    assert.strictEqual(ctx.isSystemOrNavUrl('https://accounts.google.com/SignOutOptions', null), true);
+    assert.strictEqual(ctx.isSystemOrNavUrl('https://www.google.com/intl/en/about/products', null), true);
+    assert.strictEqual(ctx.isSystemOrNavUrl('https://classroom.google.com/c/12345/a', null), true);
+    assert.strictEqual(ctx.isSystemOrNavUrl('https://drive.google.com/file/d/1A2B3C4D/view', null), false);
+    assert.strictEqual(ctx.isSystemOrNavUrl('https://docs.google.com/presentation/d/1SlideID/edit', null), false);
   });
 
   console.log('\n--- TEST GROUP 3: SIMULATED HTML DOM SCANNING ---');

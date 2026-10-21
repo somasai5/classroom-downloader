@@ -24,7 +24,7 @@ window.ClassroomUI = {
   },
 
   // Inject the floating master control bar
-  renderMasterFloatingBar(onDownloadAllDirect, onDownloadAllZip, onSelectAllPage) {
+  renderMasterFloatingBar(onDownloadAllDirect, onDownloadAllZip, onSelectAllPage, onExpandAll) {
     let bar = document.getElementById('cqd-master-floating-bar');
     if (!bar) {
       bar = document.createElement('div');
@@ -46,6 +46,9 @@ window.ClassroomUI = {
           <button id="cqd-master-scan" class="cqd-btn cqd-btn-secondary" style="padding:6px 10px; font-size:12px;">
             ⚡ Select
           </button>
+          <button id="cqd-master-expand" class="cqd-btn cqd-btn-secondary" style="padding:6px 10px; font-size:12px;" title="Auto-expand all posts to load attachments">
+            ⚡ Expand
+          </button>
           <button id="cqd-master-toggle" class="cqd-bar-toggle-btn" title="Minimize toolbar">✕</button>
         </div>
       `;
@@ -54,6 +57,9 @@ window.ClassroomUI = {
       bar.querySelector('#cqd-master-download-direct').onclick = onDownloadAllDirect;
       bar.querySelector('#cqd-master-download-zip').onclick = onDownloadAllZip;
       bar.querySelector('#cqd-master-scan').onclick = onSelectAllPage;
+      if (onExpandAll && bar.querySelector('#cqd-master-expand')) {
+        bar.querySelector('#cqd-master-expand').onclick = onExpandAll;
+      }
 
       const toggleBtn = bar.querySelector('#cqd-master-toggle');
       const brandPill = bar.querySelector('#cqd-master-brand-pill');
