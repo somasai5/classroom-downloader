@@ -29,8 +29,51 @@
 .cqd-master-brand {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cqd-master-count-badge {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+  border: 1px solid rgba(165, 180, 252, 0.3);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+}
+
+.cqd-bar-toggle-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #94a3b8;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  transition: all 0.15s ease-in-out;
+  padding: 0;
+}
+
+.cqd-bar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.cqd-master-bar.cqd-minimized {
+  padding: 6px 14px;
+  border-radius: 30px;
+  cursor: pointer;
+}
+
+.cqd-master-bar.cqd-minimized .cqd-master-full-controls {
+  display: none !important;
 }
 
 .cqd-action-container {
@@ -215,4 +258,43 @@
 @keyframes cqdSlideUp {
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* 1-Click Download Button on Every Attachment Card */
+.cqd-file-dl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #4338ca;
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  color: #ffffff !important;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: all 0.15s ease-in-out;
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3);
+  margin-left: auto;
+  flex-shrink: 0;
+  z-index: 10;
+  text-decoration: none;
+}
+
+.cqd-file-dl-btn:hover {
+  background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(79, 70, 229, 0.4);
+}
+
+.cqd-file-dl-btn:active {
+  transform: translateY(0);
+}
+
+.cqd-file-dl-btn.cqd-btn-downloaded {
+  background: #10b981 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
 }

@@ -53,12 +53,12 @@ classroom-downloader/
 2. Enable **Developer mode** (toggle in the top-right corner).
 3. Click **Load unpacked**.
 4. Select the `src/` directory:
-   `C:\Users\somas\.gemini\antigravity-ide\scratch\classroom-downloader\src`
+   `c:\Users\somas\OneDrive\Desktop\classroom-downloader\src`
 5. Navigate to [Google Classroom](https://classroom.google.com) or open `test/test_classroom.html` in your browser.
 
 ---
 
 ## 🧪 Testing Locally
 You can test the UI, modal filtering, and ZIP engine without logging into Google Classroom:
-1. Double-click or open [test_classroom.html](file:///C:/Users/somas/.gemini/antigravity-ide/scratch/classroom-downloader/test/test_classroom.html) in Chrome/Edge.
+1. Double-click or open [test_classroom.html](file:///c:/Users/somas/OneDrive/Desktop/classroom-downloader/test/test_classroom.html) in Chrome/Edge.
 2. Observe the injected **`[ Download All (.zip) ]`**, **`[ Select Files ]`**, and **`[ 🕒 Edited ]`** buttons in action!

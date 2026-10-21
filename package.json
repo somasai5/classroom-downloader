@@ -7,7 +7,8 @@
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test/dry_run_test.js",
+    "generate-icons": "node generate-icons.js"
   },
   "keywords": [],
   "author": "",

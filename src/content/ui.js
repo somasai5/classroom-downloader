@@ -1,50 +1,122 @@
 // Classroom Suite - Injected UI & Modals
 window.ClassroomUI = {
+  // Create a 1-click download button for every individual attachment card
+  createSingleFileDownloadButton(fileInfo, onDownload) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cqd-file-dl-btn';
+    btn.setAttribute('data-cqd-download', 'true');
+    btn.title = 'Direct Download: ' + fileInfo.title;
+    btn.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      <span>Download</span>
+    `;
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onDownload(fileInfo, btn);
+    };
+    return btn;
+  },
+
   // Inject the floating master control bar
-  renderMasterFloatingBar(onDownloadAllPage, onSelectAllPage) {
+  renderMasterFloatingBar(onDownloadAllDirect, onDownloadAllZip, onSelectAllPage) {
     let bar = document.getElementById('cqd-master-floating-bar');
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'cqd-master-floating-bar';
       bar.className = 'cqd-master-bar';
       bar.innerHTML = `
-        <div class="cqd-master-brand">
+        <div class="cqd-master-brand" id="cqd-master-brand-pill" title="Click to expand/minimize">
           <span style="font-size:16px;">🎓</span>
           <span><b>Classroom Suite</b></span>
+          <span id="cqd-master-count" class="cqd-master-count-badge">0 files</span>
         </div>
-        <button id="cqd-master-download-all" class="cqd-btn cqd-btn-primary" style="padding:6px 14px; font-size:12px;">
-          📦 Download All Page Materials (.ZIP)
-        </button>
-        <button id="cqd-master-scan" class="cqd-btn cqd-btn-secondary" style="padding:6px 10px; font-size:12px;">
-          ⚡ Select Materials
-        </button>
+        <div class="cqd-master-full-controls" style="display:flex; align-items:center; gap:8px;">
+          <button id="cqd-master-download-direct" class="cqd-btn cqd-btn-primary" style="padding:6px 14px; font-size:12px;">
+            ⬇ Download All Files
+          </button>
+          <button id="cqd-master-download-zip" class="cqd-btn cqd-btn-secondary" style="padding:6px 10px; font-size:12px;">
+            📦 .ZIP
+          </button>
+          <button id="cqd-master-scan" class="cqd-btn cqd-btn-secondary" style="padding:6px 10px; font-size:12px;">
+            ⚡ Select
+          </button>
+          <button id="cqd-master-toggle" class="cqd-bar-toggle-btn" title="Minimize toolbar">✕</button>
+        </div>
       `;
       document.body.appendChild(bar);
 
-      bar.querySelector('#cqd-master-download-all').onclick = onDownloadAllPage;
+      bar.querySelector('#cqd-master-download-direct').onclick = onDownloadAllDirect;
+      bar.querySelector('#cqd-master-download-zip').onclick = onDownloadAllZip;
       bar.querySelector('#cqd-master-scan').onclick = onSelectAllPage;
+
+      const toggleBtn = bar.querySelector('#cqd-master-toggle');
+      const brandPill = bar.querySelector('#cqd-master-brand-pill');
+
+      const toggleMinimize = (e) => {
+        if (e) e.stopPropagation();
+        bar.classList.toggle('cqd-minimized');
+        const isMin = bar.classList.contains('cqd-minimized');
+        if (toggleBtn) toggleBtn.textContent = isMin ? '↗' : '✕';
+        if (toggleBtn) toggleBtn.title = isMin ? 'Expand toolbar' : 'Minimize toolbar';
+      };
+
+      toggleBtn.onclick = toggleMinimize;
+      brandPill.onclick = () => {
+        if (bar.classList.contains('cqd-minimized')) {
+          toggleMinimize();
+        }
+      };
     }
   },
 
-  createActionBar(data, onDownloadAll, onQuickPick, onViewDiff) {
+  updateMasterBar(count) {
+    const countEl = document.getElementById('cqd-master-count');
+    if (countEl) {
+      countEl.textContent = `${count} file${count === 1 ? '' : 's'}`;
+      countEl.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+    const directBtn = document.getElementById('cqd-master-download-direct');
+    if (directBtn && !directBtn.disabled) {
+      directBtn.innerHTML = count > 0 ? `⬇ Download All (${count})` : '⬇ Download All Files';
+    }
+  },
+
+  createActionBar(data, onDownloadDirect, onDownloadZip, onQuickPick, onViewDiff) {
     const container = document.createElement('div');
     container.className = 'cqd-action-container';
     container.setAttribute('data-cqd-post-id', data.id);
 
-    const btnDownloadAll = document.createElement('button');
-    btnDownloadAll.className = 'cqd-btn cqd-btn-primary';
-    btnDownloadAll.innerHTML = `
+    const btnDownloadDirect = document.createElement('button');
+    btnDownloadDirect.className = 'cqd-btn cqd-btn-primary cqd-action-direct';
+    btnDownloadDirect.innerHTML = `
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
         <polyline points="7 10 12 15 17 10"></polyline>
         <line x1="12" y1="15" x2="12" y2="3"></line>
       </svg>
-      <span>Download All (.zip)</span>
+      <span>Download Files</span>
       <span class="cqd-badge-count">${data.attachments.length}</span>
     `;
-    btnDownloadAll.onclick = (e) => {
+    btnDownloadDirect.onclick = (e) => {
       e.stopPropagation();
-      onDownloadAll(data, btnDownloadAll);
+      onDownloadDirect(data, btnDownloadDirect);
+    };
+
+    const btnDownloadZip = document.createElement('button');
+    btnDownloadZip.className = 'cqd-btn cqd-btn-secondary cqd-action-zip';
+    btnDownloadZip.innerHTML = `
+      <span>📦 .ZIP</span>
+    `;
+    btnDownloadZip.title = 'Download bundle as .zip archive';
+    btnDownloadZip.onclick = (e) => {
+      e.stopPropagation();
+      onDownloadZip(data, btnDownloadZip);
     };
 
     const btnQuickPick = document.createElement('button');
@@ -54,14 +126,15 @@ window.ClassroomUI = {
         <polyline points="9 11 12 14 22 4"></polyline>
         <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
       </svg>
-      <span>Select Files</span>
+      <span>Select</span>
     `;
     btnQuickPick.onclick = (e) => {
       e.stopPropagation();
       onQuickPick(data);
     };
 
-    container.appendChild(btnDownloadAll);
+    container.appendChild(btnDownloadDirect);
+    container.appendChild(btnDownloadZip);
     container.appendChild(btnQuickPick);
 
     if (data.isUpdated) {
@@ -87,7 +160,7 @@ window.ClassroomUI = {
     return container;
   },
 
-  showQuickPickModal(data, onConfirm) {
+  showQuickPickModal(data, onConfirmDirect, onConfirmZip, onSingleDownload) {
     this.closeModal();
 
     const overlay = document.createElement('div');
@@ -125,7 +198,8 @@ window.ClassroomUI = {
         </div>
         <div style="display:flex; gap:8px;">
           <button id="cqd-modal-cancel" class="cqd-btn cqd-btn-secondary">Cancel</button>
-          <button id="cqd-modal-download-zip" class="cqd-btn cqd-btn-primary">Download Selected (.ZIP)</button>
+          <button id="cqd-modal-download-direct" class="cqd-btn cqd-btn-primary">⬇ Download Files</button>
+          <button id="cqd-modal-download-zip" class="cqd-btn cqd-btn-secondary">📦 As .ZIP</button>
         </div>
       </div>
     `;
@@ -143,20 +217,34 @@ window.ClassroomUI = {
       const icon = this.getFileIcon(file.extension);
 
       item.innerHTML = `
-        <label>
+        <label style="display:flex; align-items:center; gap:10px; flex:1; cursor:pointer;">
           <input type="checkbox" class="cqd-file-check" data-index="${index}" checked style="accent-color: #4f46e5; width:17px; height:17px; cursor:pointer;" />
           <span class="cqd-file-icon">${icon}</span>
           <span style="flex:1; overflow:hidden; text-overflow:ellipsis; font-weight:500;" title="${this.escapeHtml(file.title)}">${this.escapeHtml(file.title)}</span>
           <span class="cqd-file-meta">${file.typeLabel || file.extension.toUpperCase()}</span>
         </label>
+        <button type="button" class="cqd-btn cqd-btn-secondary cqd-item-dl-btn" data-index="${index}" style="padding: 3px 8px; font-size: 11px; margin-left: 8px;">
+          ⬇ Save
+        </button>
       `;
       fileListEl.appendChild(item);
+
+      const dlSingleBtn = item.querySelector('.cqd-item-dl-btn');
+      if (dlSingleBtn && onSingleDownload) {
+        dlSingleBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onSingleDownload(file, dlSingleBtn);
+        };
+      }
     });
 
     const updateCount = () => {
       const checked = card.querySelectorAll('.cqd-file-check:checked').length;
       selectedCountEl.textContent = checked;
-      card.querySelector('#cqd-modal-download-zip').disabled = (checked === 0);
+      const disabled = (checked === 0);
+      card.querySelector('#cqd-modal-download-direct').disabled = disabled;
+      card.querySelector('#cqd-modal-download-zip').disabled = disabled;
     };
 
     card.querySelector('#cqd-select-all').onclick = () => {
@@ -171,12 +259,21 @@ window.ClassroomUI = {
 
     card.querySelectorAll('.cqd-filter-btn').forEach(btn => {
       btn.onclick = () => {
+        card.querySelectorAll('.cqd-filter-btn').forEach(b => {
+          b.style.background = '#ffffff';
+          b.style.borderColor = '#d1d5db';
+          b.style.color = '#374151';
+        });
+        btn.style.background = '#e0e7ff';
+        btn.style.borderColor = '#6366f1';
+        btn.style.color = '#3730a3';
+
         const filter = btn.getAttribute('data-filter');
         card.querySelectorAll('.cqd-file-item').forEach(item => {
-          const ext = item.getAttribute('data-ext');
+          const ext = (item.getAttribute('data-ext') || '').toLowerCase();
           let match = true;
           if (filter === 'pdf') match = ext === 'pdf';
-          if (filter === 'doc') match = ['doc', 'docx', 'gdoc', 'gslides', 'pptx', 'ppt'].includes(ext);
+          if (filter === 'doc') match = ['doc', 'docx', 'gdoc', 'gslides', 'pptx', 'ppt', 'gsheet', 'xlsx', 'xls', 'csv'].includes(ext);
           if (filter === 'link') match = ext === 'link' || ext === 'url';
           item.style.display = match ? 'flex' : 'none';
         });
@@ -190,13 +287,22 @@ window.ClassroomUI = {
     card.querySelector('#cqd-close-btn').onclick = () => this.closeModal();
     card.querySelector('#cqd-modal-cancel').onclick = () => this.closeModal();
 
+    card.querySelector('#cqd-modal-download-direct').onclick = () => {
+      const selectedIndices = Array.from(card.querySelectorAll('.cqd-file-check:checked'))
+        .map(el => parseInt(el.getAttribute('data-index'), 10));
+      const selectedFiles = selectedIndices.map(i => data.attachments[i]);
+      if (selectedFiles.length === 0) return;
+      this.closeModal();
+      if (onConfirmDirect) onConfirmDirect(data, selectedFiles);
+    };
+
     card.querySelector('#cqd-modal-download-zip').onclick = () => {
       const selectedIndices = Array.from(card.querySelectorAll('.cqd-file-check:checked'))
         .map(el => parseInt(el.getAttribute('data-index'), 10));
       const selectedFiles = selectedIndices.map(i => data.attachments[i]);
       if (selectedFiles.length === 0) return;
       this.closeModal();
-      onConfirm(data, selectedFiles);
+      if (onConfirmZip) onConfirmZip(data, selectedFiles);
     };
 
     overlay.onclick = (e) => {
@@ -240,6 +346,9 @@ window.ClassroomUI = {
 
     card.querySelector('#cqd-close-btn').onclick = () => this.closeModal();
     card.querySelector('#cqd-diff-close').onclick = () => this.closeModal();
+    overlay.onclick = (e) => {
+      if (e.target === overlay) this.closeModal();
+    };
   },
 
   closeModal() {
