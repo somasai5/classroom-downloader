@@ -256,33 +256,72 @@
     return clean || 'Attachment';
   }
 
+  function isSystemLabel(str) {
+    if (!str) return true;
+    const s = str.trim().toLowerCase();
+    const system = [
+      'attachment', 'google calendar', 'google drive', 'class drive folder',
+      'open class folder', 'options', 'more options', 'download', 'save'
+    ];
+    return system.includes(s);
+  }
+
   function extractCleanAttachmentTitle(anchorEl) {
     if (!anchorEl) return 'Attachment';
 
-    // 1. Look for explicit title element inside card
-    const explicitEl = (typeof anchorEl.querySelector === 'function') ? (
-                       anchorEl.querySelector('.att-name') ||
-                       anchorEl.querySelector('[title]') ||
-                       anchorEl.querySelector('.asQXV') ||
-                       anchorEl.querySelector('.A65qq') ||
-                       anchorEl.querySelector('.YVvGBb') ||
-                       anchorEl.querySelector('[role="heading"]')
-                     ) : null;
-
-    if (explicitEl) {
-      if (typeof explicitEl.getAttribute === 'function' && explicitEl.getAttribute('title')) {
-        const t = explicitEl.getAttribute('title').trim();
-        if (t) return cleanTitle(t);
+    // 1. Check title and aria-label on the card anchor itself (Google Classroom puts full untruncated filename here)
+    if (typeof anchorEl.getAttribute === 'function') {
+      const anchorTitle = anchorEl.getAttribute('title');
+      if (anchorTitle && anchorTitle.trim() && !isSystemLabel(anchorTitle)) {
+        return cleanTitle(anchorTitle.trim());
       }
-      if (explicitEl.innerText && explicitEl.innerText.trim()) {
-        return cleanTitle(explicitEl.innerText.trim());
+
+      const aria = anchorEl.getAttribute('aria-label');
+      if (aria && aria.trim()) {
+        const cleanedAria = aria.replace(/^Attachment:\s*/i, '').trim();
+        if (cleanedAria && !isSystemLabel(cleanedAria)) {
+          return cleanTitle(cleanedAria);
+        }
       }
     }
 
-    // 2. Look for aria-label (Classroom uses aria-label="Attachment: Lecture 4.pdf")
-    const aria = (typeof anchorEl.getAttribute === 'function') ? (anchorEl.getAttribute('aria-label') || '') : '';
-    if (aria) {
-      return cleanTitle(aria.replace(/^Attachment:\s*/i, '').trim());
+    // 2. Look for explicit .att-name element (used in sandboxes and templates)
+    if (typeof anchorEl.querySelector === 'function') {
+      const attNameEl = anchorEl.querySelector('.att-name');
+      if (attNameEl && attNameEl.innerText && attNameEl.innerText.trim()) {
+        return cleanTitle(attNameEl.innerText.trim());
+      }
+
+      // Check title attribute on any inner element
+      const titleEl = anchorEl.querySelector('[title]');
+      if (titleEl && typeof titleEl.getAttribute === 'function') {
+        const t = titleEl.getAttribute('title');
+        if (t && t.trim() && !isSystemLabel(t)) {
+          return cleanTitle(t.trim());
+        }
+      }
+
+      // Check aria-label on any inner element
+      const ariaEl = anchorEl.querySelector('[aria-label]');
+      if (ariaEl && typeof ariaEl.getAttribute === 'function') {
+        const a = ariaEl.getAttribute('aria-label');
+        if (a && a.trim()) {
+          const cleaned = a.replace(/^Attachment:\s*/i, '').trim();
+          if (cleaned && !isSystemLabel(cleaned)) {
+            return cleanTitle(cleaned);
+          }
+        }
+      }
+
+      // Check dedicated heading / title element (.asQXV, .A65qq, .YVvGBb, [role="heading"])
+      const headingEl = anchorEl.querySelector('.asQXV') ||
+                        anchorEl.querySelector('.A65qq') ||
+                        anchorEl.querySelector('.YVvGBb') ||
+                        anchorEl.querySelector('[role="heading"]');
+
+      if (headingEl && headingEl.innerText && headingEl.innerText.trim()) {
+        return cleanTitle(headingEl.innerText.trim());
+      }
     }
 
     // 3. Fallback: Parse innerText line-by-line, skipping emoji & size metadata
@@ -821,7 +860,8 @@
       if (bgResponse && bgResponse.success && bgResponse.data) {
         const mime = bgResponse.data.mime || (fileInfo.extension === 'pdf' ? 'application/pdf' : 'application/octet-stream');
         const blob = base64ToBlob(bgResponse.data.base64, mime);
-        triggerBlobDownload(blob, sanitize(fileInfo.title));
+        const finalFilename = sanitize((bgResponse.data && bgResponse.data.serverFilename) || fileInfo.title);
+        triggerBlobDownload(blob, finalFilename);
 
         if (btnElement) {
           btnElement.innerHTML = '<span>✓ Saved</span>';
@@ -909,7 +949,8 @@
         if (bgResponse && bgResponse.success && bgResponse.data) {
           const mime = bgResponse.data.mime || (file.extension === 'pdf' ? 'application/pdf' : 'application/octet-stream');
           const blob = base64ToBlob(bgResponse.data.base64, mime);
-          triggerBlobDownload(blob, sanitize(file.title));
+          const finalFilename = sanitize((bgResponse.data && bgResponse.data.serverFilename) || file.title);
+          triggerBlobDownload(blob, finalFilename);
           downloadedCount++;
         } else {
           // 2. Direct Chrome downloads fallback
@@ -1019,7 +1060,8 @@
               });
 
               if (bgResponse && bgResponse.success && bgResponse.data) {
-                folder.file(sanitize(file.title), bgResponse.data.base64, { base64: true });
+                const finalFilename = sanitize((bgResponse.data && bgResponse.data.serverFilename) || file.title);
+                folder.file(finalFilename, bgResponse.data.base64, { base64: true });
                 fileSaved = true;
                 savedCount++;
               } else {

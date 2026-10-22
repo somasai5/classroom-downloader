@@ -76,12 +76,13 @@ async function handleDirectDownload({ url, filename, course, assignment }) {
       const fileData = await fetchAttachmentBase64(url);
       const mime = fileData.mime || 'application/octet-stream';
       const dataUri = `data:${mime};base64,${fileData.base64}`;
+      const downloadFilename = sanitize(fileData.serverFilename || cleanFile);
 
       return new Promise((resolve, reject) => {
         // Try organized path first
         chrome.downloads.download({
           url: dataUri,
-          filename: cleanFile,
+          filename: downloadFilename,
           conflictAction: 'uniquify',
           saveAs: false
         }, (id) => {
@@ -91,7 +92,7 @@ async function handleDirectDownload({ url, filename, course, assignment }) {
           // Fallback to Downloads root if path has issue
           chrome.downloads.download({
             url: dataUri,
-            filename: cleanFile,
+            filename: downloadFilename,
             conflictAction: 'uniquify',
             saveAs: false
           }, (fallbackId) => {
@@ -245,6 +246,8 @@ async function fetchAttachmentBase64(url) {
   }
 
   const res = fetchResult.res;
+  const contentDisposition = (res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-disposition') : '') || '';
+  const serverFilename = parseContentDispositionFilename(contentDisposition);
   const buffer = await res.arrayBuffer();
   // Prevent Chrome IPC message size limit crash (>40MB)
   if (buffer.byteLength > 40 * 1024 * 1024) {
@@ -254,7 +257,25 @@ async function fetchAttachmentBase64(url) {
   const bytes = new Uint8Array(buffer);
   const base64 = bufferToBase64(bytes);
   const mime = fetchResult.contentType || 'application/pdf';
-  return { base64, size: bytes.byteLength, mime };
+  return { base64, size: bytes.byteLength, mime, serverFilename };
+}
+
+// Parse authentic filename sent by Google Drive server in Content-Disposition header
+function parseContentDispositionFilename(header) {
+  if (!header) return null;
+  // RFC 5987 / RFC 6266: filename*=UTF-8''filename.ext
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim().replace(/^["']|["']$/g, ''));
+    } catch (e) {}
+  }
+  // Standard filename="..."
+  const match = header.match(/filename="?([^";]+)"?/i);
+  if (match) {
+    return match[1].trim();
+  }
+  return null;
 }
 
 // Fast chunked base64 encoding (100x faster than single-char concatenation)

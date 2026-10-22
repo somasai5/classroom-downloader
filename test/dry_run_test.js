@@ -125,6 +125,26 @@ async function runAllTests() {
     assert.strictEqual(title, 'Lecture_04_Graph_Traversal.pdf');
   });
 
+  test('Title extraction parses full untruncated filename from aria-label or title attributes', () => {
+    // Scenario 1: Google Classroom card with aria-label
+    const mockAriaCard = {
+      getAttribute: (attr) => (attr === 'aria-label' ? 'Attachment: Principal Component Analysis Notes.pdf' : null),
+      querySelector: (sel) => (sel === '.YVvGBb' ? { innerText: 'Principal Component ...' } : null),
+      innerText: 'Principal Component ...\nPDF'
+    };
+    const titleAria = ctx.extractCleanAttachmentTitle(mockAriaCard);
+    assert.strictEqual(titleAria, 'Principal Component Analysis Notes.pdf', 'Should prioritize full filename from aria-label over truncated visible text');
+
+    // Scenario 2: Google Classroom card with title attribute
+    const mockTitleCard = {
+      getAttribute: (attr) => (attr === 'title' ? 'Advanced Machine Learning Lecture 5.pptx' : null),
+      querySelector: (sel) => (sel === '.YVvGBb' ? { innerText: 'Advanced Machine Lea...' } : null),
+      innerText: 'Advanced Machine Lea...\nPowerPoint'
+    };
+    const titleAttr = ctx.extractCleanAttachmentTitle(mockTitleCard);
+    assert.strictEqual(titleAttr, 'Advanced Machine Learning Lecture 5.pptx', 'Should prioritize full filename from title attribute');
+  });
+
   test('Google Drive link resolver handles standard, multi-account (/u/0/, /u/1/), and open?id=', () => {
     const testCases = [
       {
