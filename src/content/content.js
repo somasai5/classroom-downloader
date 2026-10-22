@@ -94,7 +94,12 @@
   function updateMasterBarStatus() {
     if (window.ClassroomUI && window.ClassroomUI.updateMasterBar) {
       const files = getAllPageAttachments();
-      window.ClassroomUI.updateMasterBar(files.length);
+      const noteFiles = files.filter(f => f.extension !== 'link');
+      if (noteFiles.length > 0) {
+        window.ClassroomUI.updateMasterBar(noteFiles.length, true);
+      } else {
+        window.ClassroomUI.updateMasterBar(files.length, false);
+      }
     }
   }
 
@@ -109,7 +114,28 @@
       '.g-classroom-post'
     ];
 
-    const elements = document.querySelectorAll(postSelectors.join(','));
+    let elements = Array.from(document.querySelectorAll(postSelectors.join(',')));
+
+    // Support Single Material & Assignment Detail Pages (e.g. /c/.../m/... or /c/.../a/.../details)
+    const locPath = (typeof window !== 'undefined' && window.location && (window.location.pathname || window.location.href)) || '';
+    const isDetailPage = locPath.includes('/m/') || 
+                         locPath.includes('/a/') || 
+                         locPath.includes('/details') ||
+                         Boolean(typeof document.querySelector === 'function' && document.querySelector('main h1, [role="main"] h1'));
+
+    if (elements.length === 0 || isDetailPage) {
+      const detailContainer = document.querySelector('main') || 
+                              document.querySelector('[role="main"]') || 
+                              document.querySelector('.wXlZre') ||
+                              document.querySelector('.DshBEb');
+      if (detailContainer && detailContainer.querySelector('h1')) {
+        if (isDetailPage) {
+          elements = [detailContainer];
+        } else if (elements.length === 0) {
+          elements.push(detailContainer);
+        }
+      }
+    }
 
     elements.forEach((postEl) => {
       const hasActionBar = postEl.querySelector('.cqd-action-container');
@@ -147,10 +173,11 @@
   }
 
   function parsePostData(el) {
-    const titleEl = el.querySelector('h2') || 
+    const titleEl = el.querySelector('h1') || 
+                    el.querySelector('h2') || 
                     el.querySelector('h3') || 
                     el.querySelector('.asQXV') || 
-                    el.querySelector('.A65qq') ||
+                    el.querySelector('.A65qq') || 
                     el.querySelector('.post-title');
     const title = titleEl ? titleEl.innerText.trim() : 'Classroom_Material';
 
@@ -264,7 +291,7 @@
 
     // 1. Ignore links inside Google top bar, header, or navigation drawer
     if (anchorEl && typeof anchorEl.closest === 'function') {
-      if (anchorEl.closest('header, nav, #gb, .gb_, [role="banner"], [role="navigation"], .app-bar, .drawer, [data-is-drawer="true"]')) {
+      if (anchorEl.closest('header, nav, #gb, .gb_, [role="banner"], [role="navigation"], .app-bar, .drawer, [data-is-drawer="true"], aside, .tUcf0, .W3hIae, .f0fHw, [aria-label*="Main menu"], [aria-label*="Main Menu"], [aria-label*="Navigation drawer"]')) {
         return true;
       }
     }
@@ -388,7 +415,7 @@
         id: fileId,
         title: ensureExtension(text, ext),
         extension: ext,
-        typeLabel: 'Drive File',
+        typeLabel: ext === 'pdf' ? 'PDF' : 'Drive File',
         downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId + '&confirm=t&authuser=' + authUser,
         assignment: postTitle
       };
@@ -466,6 +493,8 @@
   }
 
   function injectActionBar(postEl, postData) {
+    if (!postEl || !postData || postEl.querySelector('.cqd-action-container')) return;
+
     const actionBar = window.ClassroomUI.createActionBar(
       postData,
       (data, btn) => handleDownloadAllDirect(data, btn),
@@ -474,9 +503,13 @@
       handleViewDiff
     );
 
-    const targetContainer = postEl.querySelector('.Q814ie') || 
+    const h1El = postEl.querySelector('h1');
+    const headerContainer = h1El ? (h1El.closest('.Q814ie, .wXlZre, .DshBEb, .post-header') || h1El.parentElement || h1El) : null;
+    const targetContainer = headerContainer ||
+                            postEl.querySelector('.Q814ie') || 
                             postEl.querySelector('.A65qq') || 
                             postEl.querySelector('.post-header') ||
+                            postEl.querySelector('h2') ||
                             postEl;
 
     targetContainer.insertAdjacentElement('afterend', actionBar);
@@ -486,18 +519,54 @@
   function getAllPageAttachments() {
     const allFiles = [];
 
-    // 1. Gather attachments from all detected course post containers
+    const locPath = (typeof window !== 'undefined' && window.location && (window.location.pathname || window.location.href)) || '';
+    const isDetailPage = locPath.includes('/m/') || 
+                         locPath.includes('/a/') || 
+                         locPath.includes('/details') ||
+                         Boolean(typeof document.querySelector === 'function' && document.querySelector('main h1, [role="main"] h1'));
+
+    // 1. If on Single Material or Assignment Detail Page, prioritize detailContainer
+    if (isDetailPage) {
+      const detailContainer = document.querySelector('main') || 
+                              document.querySelector('[role="main"]') || 
+                              document.querySelector('.wXlZre') ||
+                              document.querySelector('.DshBEb');
+      if (detailContainer && detailContainer.querySelector('h1')) {
+        const postData = parsePostData(detailContainer);
+        if (postData && postData.attachments) {
+          postData.attachments.forEach((fileInfo) => {
+            if (!allFiles.some(f => f.downloadUrl === fileInfo.downloadUrl)) {
+              allFiles.push(fileInfo);
+            }
+          });
+        }
+        if (allFiles.length > 0) return allFiles;
+      }
+    }
+
+    // 2. Gather attachments from all detected course post containers
     const postSelectors = [
       '[data-stream-item-id]',
       '[jscontroller="A2Lzbe"]',
       '.VBEdtc-Wvd9cc',
       '.ySjX5d',
       '.onkcGd',
-      '.g-classroom-post',
-      '[role="listitem"]'
+      '.g-classroom-post'
     ];
 
-    const postElements = document.querySelectorAll(postSelectors.join(','));
+    let postElements = Array.from(document.querySelectorAll(postSelectors.join(',')));
+
+    // Fallback: If on Single Material or Assignment Detail Page
+    if (postElements.length === 0) {
+      const detailContainer = document.querySelector('main') || 
+                              document.querySelector('[role="main"]') || 
+                              document.querySelector('.wXlZre') ||
+                              document.querySelector('.DshBEb');
+      if (detailContainer && detailContainer.querySelector('h1')) {
+        postElements = [detailContainer];
+      }
+    }
+
     postElements.forEach((postEl) => {
       const postTitle = (parsePostData(postEl) || {}).title || 'Course Materials';
       postEl.querySelectorAll('a[href]').forEach((a) => {
@@ -509,7 +578,7 @@
       });
     });
 
-    // 2. Fallback: If no posts matched, scan links inside main container, strictly excluding system/nav links
+    // 3. Fallback: If no posts matched, scan links inside main container, strictly excluding system/nav links
     if (allFiles.length === 0) {
       const mainContainer = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
       mainContainer.querySelectorAll('a[href]').forEach((a) => {
@@ -589,12 +658,15 @@
       return;
     }
 
+    const noteFiles = files.filter(f => f.extension !== 'link');
+    const targetFiles = noteFiles.length > 0 ? noteFiles : files;
+
     const btn = document.getElementById('cqd-master-download-direct');
     const masterData = {
       course: courseTitle,
-      title: 'Complete_Class_Materials',
-      description: 'All attachments gathered from ' + courseTitle,
-      attachments: files
+      title: 'Complete_Class_Notes',
+      description: 'Class notes gathered from ' + courseTitle,
+      attachments: targetFiles
     };
 
     await handleDownloadAllDirect(masterData, btn || document.createElement('button'));
@@ -613,12 +685,15 @@
       return;
     }
 
+    const noteFiles = files.filter(f => f.extension !== 'link');
+    const targetFiles = noteFiles.length > 0 ? noteFiles : files;
+
     const btn = document.getElementById('cqd-master-download-zip') || document.getElementById('cqd-master-download-all');
     const masterData = {
       course: courseTitle,
-      title: 'Complete_Class_Materials',
-      description: 'All attachments gathered from ' + courseTitle,
-      attachments: files
+      title: 'Complete_Class_Notes',
+      description: 'Class notes gathered from ' + courseTitle,
+      attachments: targetFiles
     };
 
     await handleDownloadAllZip(masterData, btn || document.createElement('button'));
@@ -637,9 +712,12 @@
       return;
     }
 
+    const headingEl = document.querySelector('main h1') || document.querySelector('[role="main"] h1') || document.querySelector('h1');
+    const pageTitle = (headingEl && !headingEl.closest('.banner')) ? headingEl.innerText.trim() : null;
+
     const masterData = {
       course: courseTitle,
-      title: 'Class_Materials_Selective',
+      title: pageTitle || 'Class_Materials_Selective',
       description: 'Select files from entire classwork',
       attachments: files
     };
@@ -975,8 +1053,10 @@
 
   function ensureExtension(filename, ext) {
     if (!filename) return 'file.' + ext;
-    if (filename.toLowerCase().endsWith('.' + ext)) return filename;
-    return filename + '.' + ext;
+    // Strip trailing ellipsis, dots, and spaces cleanly
+    const clean = filename.replace(/(\.{2,}|…|\s)+$/, '');
+    if (clean.toLowerCase().endsWith('.' + ext)) return clean;
+    return clean + '.' + ext;
   }
 
   function safeSendMessage(message) {

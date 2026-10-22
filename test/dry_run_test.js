@@ -409,6 +409,84 @@ async function runAllTests() {
     assert.strictEqual(downloadedFile, testFile, 'Clicking single download button must trigger callback with fileInfo');
   });
 
+  test('ClassroomUI action bar & modal prioritize Class Notes over web links', () => {
+    const uiCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'content', 'ui.js'), 'utf8');
+    const mockWindow = {};
+    const createdElements = [];
+
+    const mockDocument = {
+      createElement: (tag) => {
+        const el = {
+          tagName: tag,
+          className: '',
+          innerHTML: '',
+          style: {},
+          children: [],
+          setAttribute: function(k, v) { this[k] = v; },
+          getAttribute: function(k) { return this[k]; },
+          appendChild: function(c) { this.children.push(c); return c; },
+          querySelector: function(sel) {
+            if (sel === '.cqd-badge-count') return { textContent: '2' };
+            if (sel === '.cqd-action-direct') return this.children.find(c => c.className && c.className.includes('cqd-action-direct'));
+            return null;
+          },
+          querySelectorAll: function() { return []; },
+          remove: function() {}
+        };
+        createdElements.push(el);
+        return el;
+      },
+      getElementById: () => null,
+      body: { appendChild: () => {} }
+    };
+
+    const evalUi = new Function('window', 'document', uiCode);
+    evalUi(mockWindow, mockDocument);
+
+    const testPostData = {
+      id: 'material-pca-123',
+      title: 'Principle Component Analysis',
+      course: 'CSE 303 Machine Learning',
+      attachments: [
+        { title: 'Medium Article', extension: 'link', typeLabel: 'Link', downloadUrl: 'https://medium.com/...' },
+        { title: 'Turing Guide', extension: 'link', typeLabel: 'Link', downloadUrl: 'https://turing.com/...' },
+        { title: 'Simplilearn Tutorial', extension: 'link', typeLabel: 'Link', downloadUrl: 'https://simplilearn.com/...' },
+        { title: 'GitHub Repo', extension: 'link', typeLabel: 'Link', downloadUrl: 'https://github.com/...' },
+        { title: 'Principal Component Analysis.pdf', extension: 'pdf', typeLabel: 'PDF', downloadUrl: 'https://drive.google.com/file/d/1...' },
+        { title: 'Principal_Component_Slides.pdf', extension: 'pdf', typeLabel: 'PDF', downloadUrl: 'https://drive.google.com/file/d/2...' }
+      ]
+    };
+
+    let directDownloadedData = null;
+    let zipDownloadedData = null;
+
+    const bar = mockWindow.ClassroomUI.createActionBar(
+      testPostData,
+      (data) => { directDownloadedData = data; },
+      (data) => { zipDownloadedData = data; },
+      () => {},
+      () => {}
+    );
+
+    // Direct download button in action bar
+    const directBtn = bar.children.find(c => c.className && c.className.includes('cqd-action-direct'));
+    assert(directBtn, 'Direct button exists');
+    assert(directBtn.innerHTML.includes('Download Class Notes'), 'Direct button must say Download Class Notes');
+    assert(directBtn.innerHTML.includes('2'), 'Badge count must show 2 (only the PDFs, ignoring 4 links)');
+
+    // Test direct button click passes only the 2 note attachments
+    directBtn.onclick({ stopPropagation: () => {} });
+    assert(directDownloadedData, 'Direct download callback fired');
+    assert.strictEqual(directDownloadedData.attachments.length, 2, 'Must only download the 2 class note PDFs');
+    assert(directDownloadedData.attachments.every(f => f.extension === 'pdf'), 'All downloaded files must be notes');
+
+    // Test ZIP button passes only the 2 note attachments
+    const zipBtn = bar.children.find(c => c.className && c.className.includes('cqd-action-zip'));
+    zipBtn.onclick({ stopPropagation: () => {} });
+    assert(zipDownloadedData, 'ZIP callback fired');
+    assert.strictEqual(zipDownloadedData.attachments.length, 2, 'Must only zip the 2 class note PDFs');
+  });
+
   console.log('\n====================================================');
   console.log(`📊 FINAL RESULT: ${passCount} Passed, ${failCount} Failed`);
   if (failCount === 0) {

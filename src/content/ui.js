@@ -81,15 +81,17 @@ window.ClassroomUI = {
     }
   },
 
-  updateMasterBar(count) {
+  updateMasterBar(count, isNotes = false) {
     const countEl = document.getElementById('cqd-master-count');
     if (countEl) {
-      countEl.textContent = `${count} file${count === 1 ? '' : 's'}`;
+      const unit = isNotes ? 'note' : 'file';
+      countEl.textContent = `${count} ${unit}${count === 1 ? '' : 's'}`;
       countEl.style.display = count > 0 ? 'inline-block' : 'none';
     }
     const directBtn = document.getElementById('cqd-master-download-direct');
     if (directBtn && !directBtn.disabled) {
-      directBtn.innerHTML = count > 0 ? `⬇ Download All (${count})` : '⬇ Download All Files';
+      const label = isNotes ? 'Download Class Notes' : 'Download All Files';
+      directBtn.innerHTML = count > 0 ? `⬇ ${label} (${count})` : `⬇ ${label}`;
     }
   },
 
@@ -97,6 +99,11 @@ window.ClassroomUI = {
     const container = document.createElement('div');
     container.className = 'cqd-action-container';
     container.setAttribute('data-cqd-post-id', data.id);
+
+    const noteFiles = (data.attachments || []).filter(f => f.extension !== 'link');
+    const hasNotes = noteFiles.length > 0;
+    const dlCount = hasNotes ? noteFiles.length : data.attachments.length;
+    const dlLabel = hasNotes ? 'Download Class Notes' : 'Download Files';
 
     const btnDownloadDirect = document.createElement('button');
     btnDownloadDirect.className = 'cqd-btn cqd-btn-primary cqd-action-direct';
@@ -106,12 +113,14 @@ window.ClassroomUI = {
         <polyline points="7 10 12 15 17 10"></polyline>
         <line x1="12" y1="15" x2="12" y2="3"></line>
       </svg>
-      <span>Download Files</span>
-      <span class="cqd-badge-count">${data.attachments.length}</span>
+      <span>${dlLabel}</span>
+      <span class="cqd-badge-count">${dlCount}</span>
     `;
+    btnDownloadDirect.title = hasNotes ? 'Download ' + noteFiles.length + ' class notes directly' : 'Download all files directly';
     btnDownloadDirect.onclick = (e) => {
       e.stopPropagation();
-      onDownloadDirect(data, btnDownloadDirect);
+      const targetData = hasNotes ? Object.assign({}, data, { attachments: noteFiles }) : data;
+      onDownloadDirect(targetData, btnDownloadDirect);
     };
 
     const btnDownloadZip = document.createElement('button');
@@ -119,10 +128,11 @@ window.ClassroomUI = {
     btnDownloadZip.innerHTML = `
       <span>📦 .ZIP</span>
     `;
-    btnDownloadZip.title = 'Download bundle as .zip archive';
+    btnDownloadZip.title = hasNotes ? 'Download ' + noteFiles.length + ' class notes as .zip archive' : 'Download bundle as .zip archive';
     btnDownloadZip.onclick = (e) => {
       e.stopPropagation();
-      onDownloadZip(data, btnDownloadZip);
+      const targetData = hasNotes ? Object.assign({}, data, { attachments: noteFiles }) : data;
+      onDownloadZip(targetData, btnDownloadZip);
     };
 
     const btnQuickPick = document.createElement('button');
@@ -176,6 +186,13 @@ window.ClassroomUI = {
     const card = document.createElement('div');
     card.className = 'cqd-modal-card';
 
+    const noteFiles = (data.attachments || []).filter(f => f.extension !== 'link');
+    const pdfCount = (data.attachments || []).filter(f => f.extension === 'pdf').length;
+    const docCount = (data.attachments || []).filter(f => ['doc', 'docx', 'gdoc', 'gslides', 'pptx', 'ppt', 'gsheet', 'xlsx', 'xls', 'csv'].includes(f.extension)).length;
+    const linkCount = (data.attachments || []).filter(f => f.extension === 'link' || f.extension === 'url').length;
+    const hasNotes = noteFiles.length > 0;
+    const initialSelectedCount = hasNotes ? noteFiles.length : data.attachments.length;
+
     card.innerHTML = `
       <div class="cqd-modal-header">
         <div class="cqd-modal-title">
@@ -187,10 +204,11 @@ window.ClassroomUI = {
       <div class="cqd-modal-body">
         <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap: wrap;">
           <span style="font-size:12px; color:#64748b; font-weight:600;">Filter:</span>
-          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="all" style="padding:4px 8px; font-size:11px;">All (${data.attachments.length})</button>
-          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="pdf" style="padding:4px 8px; font-size:11px;">PDFs</button>
-          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="doc" style="padding:4px 8px; font-size:11px;">Docs / Slides</button>
-          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="link" style="padding:4px 8px; font-size:11px;">Links</button>
+          ${hasNotes ? `<button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="notes" style="padding:4px 8px; font-size:11px; background:#e0e7ff; border-color:#6366f1; color:#3730a3; font-weight:600;">Class Notes (${noteFiles.length})</button>` : ''}
+          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="all" style="padding:4px 8px; font-size:11px; ${hasNotes ? '' : 'background:#e0e7ff; border-color:#6366f1; color:#3730a3; font-weight:600;'}">All (${data.attachments.length})</button>
+          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="pdf" style="padding:4px 8px; font-size:11px;">PDFs (${pdfCount})</button>
+          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="doc" style="padding:4px 8px; font-size:11px;">Docs / Slides (${docCount})</button>
+          <button class="cqd-btn cqd-btn-secondary cqd-filter-btn" data-filter="link" style="padding:4px 8px; font-size:11px;">Links (${linkCount})</button>
           <div style="margin-left:auto; display:flex; gap:6px;">
             <button id="cqd-select-all" class="cqd-btn cqd-btn-secondary" style="padding:4px 8px; font-size:11px;">Select All</button>
             <button id="cqd-deselect-all" class="cqd-btn cqd-btn-secondary" style="padding:4px 8px; font-size:11px;">Deselect All</button>
@@ -200,7 +218,7 @@ window.ClassroomUI = {
       </div>
       <div class="cqd-modal-footer">
         <div style="font-size:13px; color:#475569;">
-          Selected: <b id="cqd-selected-count">${data.attachments.length}</b> / ${data.attachments.length} files
+          Selected: <b id="cqd-selected-count">${initialSelectedCount}</b> / ${data.attachments.length} files
         </div>
         <div style="display:flex; gap:8px;">
           <button id="cqd-modal-cancel" class="cqd-btn cqd-btn-secondary">Cancel</button>
@@ -220,11 +238,16 @@ window.ClassroomUI = {
       const item = document.createElement('div');
       item.className = 'cqd-file-item';
       item.setAttribute('data-ext', file.extension || 'other');
+      const isNote = file.extension !== 'link';
+      item.setAttribute('data-is-note', isNote ? 'true' : 'false');
       const icon = this.getFileIcon(file.extension);
+
+      // Pre-select real class notes by default; keep web links unchecked if class notes exist
+      const isChecked = hasNotes ? isNote : true;
 
       item.innerHTML = `
         <label style="display:flex; align-items:center; gap:10px; flex:1; cursor:pointer;">
-          <input type="checkbox" class="cqd-file-check" data-index="${index}" checked style="accent-color: #4f46e5; width:17px; height:17px; cursor:pointer;" />
+          <input type="checkbox" class="cqd-file-check" data-index="${index}" ${isChecked ? 'checked' : ''} style="accent-color: #4f46e5; width:17px; height:17px; cursor:pointer;" />
           <span class="cqd-file-icon">${icon}</span>
           <span style="flex:1; overflow:hidden; text-overflow:ellipsis; font-weight:500;" title="${this.escapeHtml(file.title)}">${this.escapeHtml(file.title)}</span>
           <span class="cqd-file-meta">${file.typeLabel || file.extension.toUpperCase()}</span>
@@ -269,15 +292,19 @@ window.ClassroomUI = {
           b.style.background = '#ffffff';
           b.style.borderColor = '#d1d5db';
           b.style.color = '#374151';
+          b.style.fontWeight = 'normal';
         });
         btn.style.background = '#e0e7ff';
         btn.style.borderColor = '#6366f1';
         btn.style.color = '#3730a3';
+        btn.style.fontWeight = '600';
 
         const filter = btn.getAttribute('data-filter');
         card.querySelectorAll('.cqd-file-item').forEach(item => {
           const ext = (item.getAttribute('data-ext') || '').toLowerCase();
+          const isNote = item.getAttribute('data-is-note') === 'true';
           let match = true;
+          if (filter === 'notes') match = isNote;
           if (filter === 'pdf') match = ext === 'pdf';
           if (filter === 'doc') match = ['doc', 'docx', 'gdoc', 'gslides', 'pptx', 'ppt', 'gsheet', 'xlsx', 'xls', 'csv'].includes(ext);
           if (filter === 'link') match = ext === 'link' || ext === 'url';
