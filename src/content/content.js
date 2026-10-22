@@ -125,21 +125,18 @@
                          Boolean(h1El && (!h1El.closest || !h1El.closest('.banner')));
 
     if (elements.length === 0 || isDetailPage) {
-      let detailContainer = null;
-      if (h1El && (!h1El.closest || !h1El.closest('.banner'))) {
-        detailContainer = (typeof h1El.closest === 'function') ? 
-          h1El.closest('main, [role="main"], [jscontroller], .wXlZre, .DshBEb, .A2Lzbe') : null;
-        if (!detailContainer) {
-          detailContainer = h1El.parentElement ? (h1El.parentElement.parentElement || h1El.parentElement) : document.body;
-        }
-      } else {
-        detailContainer = document.querySelector('main') || 
-                          document.querySelector('[role="main"]') || 
-                          document.querySelector('.wXlZre') ||
-                          document.querySelector('.DshBEb');
-      }
+      // Find the main container that contains the h1 and all attachment cards
+      const validBody = (typeof document.body === 'object' && document.body && typeof document.body.querySelector === 'function') ? document.body : null;
+      let detailContainer = (h1El && typeof h1El.closest === 'function' && h1El.closest('main, [role="main"]')) ||
+                            (typeof document.querySelector === 'function' && (
+                              document.querySelector('main') || 
+                              document.querySelector('[role="main"]') || 
+                              document.querySelector('.wXlZre') || 
+                              document.querySelector('.DshBEb')
+                            )) ||
+                            validBody;
 
-      if (detailContainer) {
+      if (detailContainer && typeof detailContainer.querySelector === 'function') {
         if (isDetailPage) {
           elements = [detailContainer];
         } else if (elements.length === 0) {
@@ -149,6 +146,7 @@
     }
 
     elements.forEach((postEl) => {
+      if (!postEl || typeof postEl.querySelector !== 'function') return;
       const hasActionBar = postEl.querySelector('.cqd-action-container');
       if (hasActionBar && processedContainers.has(postEl)) {
         return;
@@ -169,10 +167,20 @@
 
   function injectPerAttachmentDownloadButtons(postEl, postData) {
     if (!window.ClassroomUI || !window.ClassroomUI.createSingleFileDownloadButton) return;
-    const linkElements = postEl.querySelectorAll('a[href]');
+    const linkElements = postEl.querySelectorAll('a[href], [data-drive-id], [data-url], [data-href]');
     linkElements.forEach((a) => {
       if (a.querySelector('.cqd-file-dl-btn') || a.parentElement?.querySelector('.cqd-file-dl-btn')) return;
-      const fileInfo = resolveAttachmentLink(a.href, a, postData.title);
+      let href = a.getAttribute('href') || a.getAttribute('data-url') || a.getAttribute('data-href');
+      if (!href && a.getAttribute('data-drive-id')) {
+        href = 'https://drive.google.com/file/d/' + a.getAttribute('data-drive-id') + '/view';
+      }
+      if (!href) {
+        const innerA = a.querySelector('a[href]');
+        if (innerA) href = innerA.href;
+      }
+      if (!href) return;
+
+      const fileInfo = resolveAttachmentLink(href, a, postData.title);
       // Only inject 1-click download button on actual downloadable files, NEVER on web links
       if (fileInfo && fileInfo.extension !== 'link') {
         const btn = window.ClassroomUI.createSingleFileDownloadButton(fileInfo, (file, btnEl) => {
@@ -185,6 +193,7 @@
   }
 
   function parsePostData(el) {
+    if (!el || typeof el.querySelector !== 'function') return null;
     const titleEl = el.querySelector('h1') || 
                     el.querySelector('h2') || 
                     el.querySelector('h3') || 
@@ -206,10 +215,17 @@
     const description = descEl ? descEl.innerText.trim() : '';
 
     const attachments = [];
-    const linkElements = el.querySelectorAll('a[href]');
+    const linkElements = el.querySelectorAll('a[href], [data-drive-id], [data-url], [data-href]');
 
     linkElements.forEach((a) => {
-      const href = a.href;
+      let href = a.getAttribute('href') || a.getAttribute('data-url') || a.getAttribute('data-href');
+      if (!href && a.getAttribute('data-drive-id')) {
+        href = 'https://drive.google.com/file/d/' + a.getAttribute('data-drive-id') + '/view';
+      }
+      if (!href) {
+        const innerA = a.querySelector('a[href]');
+        if (innerA) href = innerA.href;
+      }
       if (!href) return;
 
       const fileInfo = resolveAttachmentLink(href, a, title);
@@ -308,7 +324,7 @@
 
     // 1. Ignore links inside Google top bar, header, or navigation drawer
     if (anchorEl && typeof anchorEl.closest === 'function') {
-      if (anchorEl.closest('header, nav, #gb, .gb_, [role="banner"], [role="navigation"], .app-bar, .drawer, [data-is-drawer="true"], aside, .tUcf0, .W3hIae, .f0fHw, [aria-label*="Main menu"], [aria-label*="Main Menu"], [aria-label*="Navigation drawer"]')) {
+      if (anchorEl.closest('header, nav, #gb, .gb_, [role="banner"], [role="navigation"], .app-bar, .drawer, [data-is-drawer="true"], aside, .tUcf0, .W3hIae, .f0fHw, [aria-label*="Main menu"], [aria-label*="Main Menu"], [aria-label*="Navigation drawer"], .Wk67ed, .cptk5c, .comments, [aria-label*="comment" i]')) {
         return true;
       }
     }
@@ -389,8 +405,8 @@
       };
     }
 
-    // 2. Google Drive File (handles /file/d/ID, /file/u/0/d/ID, /open?id=ID, /uc?id=ID)
-    const driveMatch = href.match(/drive\.google\.com\/(?:file\/)?(?:u\/\d+\/)?(?:d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+    // 2. Google Drive File (handles /file/d/ID, /file/u/0/d/ID, /open?id=ID, /uc?id=ID, /download?id=ID)
+    const driveMatch = href.match(/(?:drive|docs|drive\.usercontent)\.google\.com\/(?:file\/)?(?:u\/\d+\/)?(?:d\/|open\?id=|uc\?id=|download\?id=)([a-zA-Z0-9_-]+)/);
     if (driveMatch) {
       const fileId = driveMatch[1];
       let ext = inferExtension(text);
@@ -544,21 +560,18 @@
 
     // 1. If on Single Material or Assignment Detail Page, prioritize detailContainer
     if (isDetailPage) {
-      let detailContainer = null;
-      if (h1El && (!h1El.closest || !h1El.closest('.banner'))) {
-        detailContainer = (typeof h1El.closest === 'function') ? 
-          h1El.closest('main, [role="main"], [jscontroller], .wXlZre, .DshBEb, .A2Lzbe') : null;
-        if (!detailContainer) {
-          detailContainer = h1El.parentElement ? (h1El.parentElement.parentElement || h1El.parentElement) : document.body;
-        }
-      } else {
-        detailContainer = document.querySelector('main') || 
-                          document.querySelector('[role="main"]') || 
-                          document.querySelector('.wXlZre') ||
-                          document.querySelector('.DshBEb');
-      }
+      const h1El = (typeof document.querySelector === 'function') ? document.querySelector('h1') : null;
+      const validBody = (typeof document.body === 'object' && document.body && typeof document.body.querySelector === 'function') ? document.body : null;
+      let detailContainer = (h1El && typeof h1El.closest === 'function' && h1El.closest('main, [role="main"]')) ||
+                            (typeof document.querySelector === 'function' && (
+                              document.querySelector('main') || 
+                              document.querySelector('[role="main"]') || 
+                              document.querySelector('.wXlZre') || 
+                              document.querySelector('.DshBEb')
+                            )) ||
+                            validBody;
 
-      if (detailContainer) {
+      if (detailContainer && typeof detailContainer.querySelector === 'function') {
         const postData = parsePostData(detailContainer);
         if (postData && postData.attachments) {
           postData.attachments.forEach((fileInfo) => {
@@ -767,6 +780,21 @@
     );
   }
 
+  function base64ToBlob(base64, mimeType = 'application/octet-stream') {
+    const byteCharacters = atob(base64);
+    const byteArrays = [];
+    const sliceSize = 1024;
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+      const slice = byteCharacters.slice(offset, offset + sliceSize);
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        byteNumbers[i] = slice.charCodeAt(i);
+      }
+      byteArrays.push(new Uint8Array(byteNumbers));
+    }
+    return new Blob(byteArrays, { type: mimeType });
+  }
+
   async function handleDirectDownloadSingleFile(fileInfo, btnElement) {
     const originalText = btnElement ? btnElement.innerHTML : '';
     if (btnElement) {
@@ -784,7 +812,34 @@
         return;
       }
 
-      // 1. Send DOWNLOAD_FILE message to background worker
+      // 1. Fetch file bytes using elevated background session cookies (bypasses all 403 & Drive errors)
+      const bgResponse = await safeSendMessage({
+        type: 'FETCH_ATTACHMENT_BASE64',
+        payload: { url: fileInfo.downloadUrl }
+      });
+
+      if (bgResponse && bgResponse.success && bgResponse.data) {
+        const mime = bgResponse.data.mime || (fileInfo.extension === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+        const blob = base64ToBlob(bgResponse.data.base64, mime);
+        triggerBlobDownload(blob, sanitize(fileInfo.title));
+
+        if (btnElement) {
+          btnElement.innerHTML = '<span>✓ Saved</span>';
+          btnElement.classList.add('cqd-btn-downloaded');
+          setTimeout(() => {
+            btnElement.innerHTML = originalText;
+            btnElement.classList.remove('cqd-btn-downloaded');
+            btnElement.disabled = false;
+          }, 3500);
+        }
+        safeSendMessage({
+          type: 'UPDATE_STATS',
+          payload: { filesAdded: 1, bytesAdded: bgResponse.data.size || 0, zipsAdded: 0 }
+        });
+        return;
+      }
+
+      // 2. Direct Chrome downloads API fallback
       const res = await safeSendMessage({
         type: 'DOWNLOAD_FILE',
         payload: {
@@ -805,10 +860,6 @@
             btnElement.disabled = false;
           }, 3500);
         }
-        safeSendMessage({
-          type: 'UPDATE_STATS',
-          payload: { filesAdded: 1, bytesAdded: 0, zipsAdded: 0 }
-        });
       } else {
         triggerDirectDownloadFallback(fileInfo.downloadUrl, fileInfo.title);
         if (btnElement) {
@@ -829,16 +880,19 @@
   async function handleDownloadAllDirect(data, btnElement) {
     if (!data.attachments || data.attachments.length === 0) return;
 
+    const noteFiles = data.attachments.filter(f => f.extension !== 'link');
+    const filesToDownload = noteFiles.length > 0 ? noteFiles : data.attachments;
+
     const originalText = btnElement ? btnElement.innerHTML : '';
     if (btnElement) {
       btnElement.disabled = true;
-      btnElement.innerHTML = '<span>⏳ Downloading (0/' + data.attachments.length + ')...</span>';
+      btnElement.innerHTML = '<span>⏳ Downloading (0/' + filesToDownload.length + ')...</span>';
     }
 
     let downloadedCount = 0;
-    for (const file of data.attachments) {
+    for (const file of filesToDownload) {
       if (btnElement) {
-        btnElement.innerHTML = '<span>⏳ Downloading (' + (downloadedCount + 1) + '/' + data.attachments.length + ')...</span>';
+        btnElement.innerHTML = '<span>⏳ Downloading (' + (downloadedCount + 1) + '/' + filesToDownload.length + ')...</span>';
       }
 
       try {
@@ -846,21 +900,38 @@
           continue;
         }
 
-        const res = await safeSendMessage({
-          type: 'DOWNLOAD_FILE',
-          payload: {
-            url: file.downloadUrl,
-            filename: sanitize(file.title),
-            course: data.course || courseTitle,
-            assignment: data.title
-          }
+        // 1. Fetch file bytes using elevated background session cookies
+        const bgResponse = await safeSendMessage({
+          type: 'FETCH_ATTACHMENT_BASE64',
+          payload: { url: file.downloadUrl }
         });
 
-        if (!res || !res.success) {
-          triggerDirectDownloadFallback(file.downloadUrl, file.title);
+        if (bgResponse && bgResponse.success && bgResponse.data) {
+          const mime = bgResponse.data.mime || (file.extension === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+          const blob = base64ToBlob(bgResponse.data.base64, mime);
+          triggerBlobDownload(blob, sanitize(file.title));
+          downloadedCount++;
+        } else {
+          // 2. Direct Chrome downloads fallback
+          const res = await safeSendMessage({
+            type: 'DOWNLOAD_FILE',
+            payload: {
+              url: file.downloadUrl,
+              filename: sanitize(file.title),
+              course: data.course || courseTitle,
+              assignment: data.title
+            }
+          });
+
+          if (res && res.success) {
+            downloadedCount++;
+          } else {
+            triggerDirectDownloadFallback(file.downloadUrl, file.title);
+            downloadedCount++;
+          }
         }
-        downloadedCount++;
-        await new Promise(r => setTimeout(r, 350));
+
+        await new Promise(r => setTimeout(r, 300));
       } catch (err) {
         console.error('Error downloading ' + file.title, err);
         triggerDirectDownloadFallback(file.downloadUrl, file.title);
@@ -870,12 +941,10 @@
 
     if (btnElement) {
       btnElement.innerHTML = '<span>✓ Saved (' + downloadedCount + ' files)</span>';
-      btnElement.classList.remove('cqd-btn-primary');
-      btnElement.classList.add('cqd-btn-secondary');
+      btnElement.classList.add('cqd-btn-downloaded');
       setTimeout(() => {
         btnElement.innerHTML = originalText;
-        btnElement.classList.add('cqd-btn-primary');
-        btnElement.classList.remove('cqd-btn-secondary');
+        btnElement.classList.remove('cqd-btn-downloaded');
         btnElement.disabled = false;
       }, 4000);
     }

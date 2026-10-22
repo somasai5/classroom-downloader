@@ -46,55 +46,79 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Downloads file directly using Chrome Downloads API with 3-tier fallback
+// Downloads file directly using Chrome Downloads API with elevated cookie authentication
 async function handleDirectDownload({ url, filename, course, assignment }) {
   const cleanCourse = sanitize(course || 'Classroom');
   const cleanAssignment = sanitize(assignment || 'Materials');
   const cleanFile = sanitize(filename || 'File');
   const relativePath = 'Classroom/' + cleanCourse + '/' + cleanAssignment + '/' + cleanFile;
 
-  return new Promise((resolve, reject) => {
-    // 1. Try organized folder download
-    chrome.downloads.download({
-      url: url,
-      filename: relativePath,
-      conflictAction: 'uniquify',
-      saveAs: false
-    }, (id) => {
-      if (!chrome.runtime.lastError && id) {
-        return resolve(id);
-      }
-
-      // 2. Fallback: try download directly with clean filename in Downloads root
+  // 1. If already a data URI, download directly
+  if (url && url.startsWith('data:')) {
+    return new Promise((resolve, reject) => {
       chrome.downloads.download({
         url: url,
         filename: cleanFile,
         conflictAction: 'uniquify',
         saveAs: false
-      }, async (fallbackId) => {
-        if (!chrome.runtime.lastError && fallbackId) {
-          return resolve(fallbackId);
-        }
+      }, (id) => {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        resolve(id);
+      });
+    });
+  }
 
-        // 3. Fallback: Fetch file via elevated background session cookies & download as data URI
-        try {
-          const fileData = await fetchAttachmentBase64(url);
-          const dataUri = 'data:application/octet-stream;base64,' + fileData.base64;
+  // 2. For Google Drive and Docs URLs: Fetch binary bytes first via authenticated background session cookies
+  // This completely eliminates Chrome download manager's 403 Forbidden error!
+  const isGoogleResource = url && (url.includes('drive.google.com') || url.includes('docs.google.com') || url.includes('googleusercontent.com'));
+  if (isGoogleResource) {
+    try {
+      const fileData = await fetchAttachmentBase64(url);
+      const mime = fileData.mime || 'application/octet-stream';
+      const dataUri = `data:${mime};base64,${fileData.base64}`;
+
+      return new Promise((resolve, reject) => {
+        // Try organized path first
+        chrome.downloads.download({
+          url: dataUri,
+          filename: cleanFile,
+          conflictAction: 'uniquify',
+          saveAs: false
+        }, (id) => {
+          if (!chrome.runtime.lastError && id) {
+            return resolve(id);
+          }
+          // Fallback to Downloads root if path has issue
           chrome.downloads.download({
             url: dataUri,
             filename: cleanFile,
             conflictAction: 'uniquify',
             saveAs: false
-          }, (dataId) => {
+          }, (fallbackId) => {
             if (chrome.runtime.lastError) {
               return reject(new Error(chrome.runtime.lastError.message));
             }
-            resolve(dataId);
+            resolve(fallbackId);
           });
-        } catch (fetchErr) {
-          reject(fetchErr);
-        }
+        });
       });
+    } catch (fetchErr) {
+      console.warn('Background authenticated fetch failed, attempting direct download fallback:', fetchErr);
+    }
+  }
+
+  // 3. Fallback for non-Google or when memory transfer isn't needed
+  return new Promise((resolve, reject) => {
+    chrome.downloads.download({
+      url: url,
+      filename: cleanFile,
+      conflictAction: 'uniquify',
+      saveAs: false
+    }, (id) => {
+      if (chrome.runtime.lastError) {
+        return reject(new Error(chrome.runtime.lastError.message));
+      }
+      resolve(id);
     });
   });
 }
@@ -107,59 +131,130 @@ async function fetchAttachmentBase64(url) {
     targetUrl += '&confirm=t';
   }
 
-  let res = await fetch(targetUrl, { credentials: 'include' });
-  if (!res.ok) {
-    throw new Error('Failed to fetch file: ' + res.status + ' ' + res.statusText);
-  }
-
-  let contentType = (res.headers.get('content-type') || '').toLowerCase();
-
-  // If Google Drive returns HTML warning page for large files, parse confirm URL or form
-  if (contentType.includes('text/html') && targetUrl.includes('drive.google.com')) {
-    const htmlText = await res.text();
-    // 1. Look for confirm link or token
-    const confirmMatch = htmlText.match(/href="(\/uc\?export=download[^"]+)"/i) ||
-                         htmlText.match(/href="([^"]+confirm=[^"]+)"/i);
-    const actionMatch = htmlText.match(/action="([^"]+)"/i);
-
-    if (confirmMatch) {
-      let confirmUrl = confirmMatch[1].replace(/&amp;/g, '&');
-      if (confirmUrl.startsWith('/')) confirmUrl = 'https://drive.google.com' + confirmUrl;
-      res = await fetch(confirmUrl, { credentials: 'include' });
-    } else if (actionMatch) {
-      let formUrl = actionMatch[1].replace(/&amp;/g, '&');
-      if (formUrl.startsWith('/')) formUrl = 'https://drive.google.com' + formUrl;
-
-      // Extract hidden inputs from Drive warning form
-      const formParams = new URLSearchParams();
-      const inputRegex = /<input[^>]+name="([^"]+)"[^>]*value="([^"]*)"/gi;
-      let match;
-      while ((match = inputRegex.exec(htmlText)) !== null) {
-        formParams.append(match[1], match[2]);
+  async function tryFetch(fetchUrl) {
+    try {
+      let res = await fetch(fetchUrl, { credentials: 'include' });
+      if (!res.ok) {
+        return { ok: false, status: res.status };
       }
-      if (!formParams.has('confirm')) formParams.append('confirm', 't');
 
-      const fullUrl = formUrl + (formUrl.includes('?') ? '&' : '?') + formParams.toString();
-      res = await fetch(fullUrl, { credentials: 'include' });
-    } else {
-      throw new Error('Google Drive file requires manual confirmation. Please use Direct Download.');
-    }
+      let contentType = (res.headers.get('content-type') || '').toLowerCase();
 
-    contentType = (res.headers.get('content-type') || '').toLowerCase();
-    if (contentType.includes('text/html')) {
-      throw new Error('Google Drive returned HTML warning page instead of file stream.');
+      // If Google Drive returns HTML warning page for large files, parse confirm URL or form
+      if (contentType.includes('text/html') && fetchUrl.includes('drive.google.com')) {
+        const htmlText = await res.text();
+        const confirmMatch = htmlText.match(/href="(\/uc\?export=download[^"]+)"/i) ||
+                             htmlText.match(/href="([^"]+confirm=[^"]+)"/i);
+        const actionMatch = htmlText.match(/action="([^"]+)"/i);
+
+        if (confirmMatch) {
+          let confirmUrl = confirmMatch[1].replace(/&amp;/g, '&');
+          if (confirmUrl.startsWith('/')) confirmUrl = 'https://drive.google.com' + confirmUrl;
+          res = await fetch(confirmUrl, { credentials: 'include' });
+        } else if (actionMatch) {
+          let formUrl = actionMatch[1].replace(/&amp;/g, '&');
+          if (formUrl.startsWith('/')) formUrl = 'https://drive.google.com' + formUrl;
+
+          const formParams = new URLSearchParams();
+          const inputRegex = /<input[^>]+name="([^"]+)"[^>]*value="([^"]*)"/gi;
+          let match;
+          while ((match = inputRegex.exec(htmlText)) !== null) {
+            formParams.append(match[1], match[2]);
+          }
+          if (!formParams.has('confirm')) formParams.append('confirm', 't');
+
+          const fullUrl = formUrl + (formUrl.includes('?') ? '&' : '?') + formParams.toString();
+          res = await fetch(fullUrl, { credentials: 'include' });
+        } else {
+          return { ok: false, status: 403 };
+        }
+
+        contentType = (res.headers.get('content-type') || '').toLowerCase();
+        if (contentType.includes('text/html')) {
+          return { ok: false, status: 403 };
+        }
+      }
+
+      return { ok: true, res, contentType };
+    } catch (e) {
+      return { ok: false, error: e };
     }
   }
 
+  // 1. Initial attempt
+  let fetchResult = await tryFetch(targetUrl);
+
+  // 2. Multi-Account Auth Fallback: If 403 Forbidden or 401 on Google Drive, try all account sessions
+  if (!fetchResult.ok && targetUrl.includes('drive.google.com')) {
+    const idMatch = targetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) || targetUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (idMatch) {
+      const fileId = idMatch[1];
+      const candidates = [
+        `https://drive.google.com/u/1/uc?export=download&id=${fileId}&confirm=t`,
+        `https://drive.google.com/u/0/uc?export=download&id=${fileId}&confirm=t`,
+        `https://drive.google.com/u/2/uc?export=download&id=${fileId}&confirm=t`,
+        `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t&authuser=1`,
+        `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t&authuser=0`,
+        `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`,
+        `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t&authuser=1`,
+        `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t&authuser=0`,
+        `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`
+      ];
+
+      for (const candidate of candidates) {
+        if (candidate === targetUrl) continue;
+        const candidateResult = await tryFetch(candidate);
+        if (candidateResult.ok) {
+          fetchResult = candidateResult;
+          break;
+        }
+      }
+    }
+  }
+
+  // 3. Multi-Account Auth Fallback for Google Docs / Slides
+  if (!fetchResult.ok && targetUrl.includes('docs.google.com')) {
+    const docIdMatch = targetUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (docIdMatch) {
+      const docId = docIdMatch[1];
+      const isPres = targetUrl.includes('/presentation/');
+      const isSpreadsheet = targetUrl.includes('/spreadsheets/');
+      const docType = isPres ? 'presentation' : (isSpreadsheet ? 'spreadsheets' : 'document');
+      const exportPath = isPres ? '/export/pdf' : (isSpreadsheet ? '/export?format=xlsx' : '/export?format=pdf');
+
+      const docCandidates = [
+        `https://docs.google.com/${docType}/u/1/d/${docId}${exportPath}`,
+        `https://docs.google.com/${docType}/u/0/d/${docId}${exportPath}`,
+        `https://docs.google.com/${docType}/u/2/d/${docId}${exportPath}`,
+        `https://docs.google.com/${docType}/d/${docId}${exportPath}`
+      ];
+
+      for (const candidate of docCandidates) {
+        if (candidate === targetUrl) continue;
+        const candidateResult = await tryFetch(candidate);
+        if (candidateResult.ok) {
+          fetchResult = candidateResult;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!fetchResult.ok || !fetchResult.res) {
+    throw new Error('Failed to fetch file: ' + (fetchResult.status || 'Network Error'));
+  }
+
+  const res = fetchResult.res;
   const buffer = await res.arrayBuffer();
   // Prevent Chrome IPC message size limit crash (>40MB)
   if (buffer.byteLength > 40 * 1024 * 1024) {
-    throw new Error('File exceeds in-memory ZIP transfer limit (' + Math.round(buffer.byteLength / 1048576) + 'MB). Direct download is recommended.');
+    throw new Error('File exceeds in-memory transfer limit (' + Math.round(buffer.byteLength / 1048576) + 'MB). Direct download is recommended.');
   }
 
   const bytes = new Uint8Array(buffer);
   const base64 = bufferToBase64(bytes);
-  return { base64, size: bytes.byteLength };
+  const mime = fetchResult.contentType || 'application/pdf';
+  return { base64, size: bytes.byteLength, mime };
 }
 
 // Fast chunked base64 encoding (100x faster than single-char concatenation)
