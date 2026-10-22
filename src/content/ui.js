@@ -6,7 +6,7 @@ window.ClassroomUI = {
     btn.type = 'button';
     btn.className = 'cqd-file-dl-btn';
     btn.setAttribute('data-cqd-download', 'true');
-    btn.title = 'Direct Download: ' + fileInfo.title;
+    btn.title = '1-Click Download: ' + fileInfo.title;
     btn.innerHTML = `
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -18,7 +18,12 @@ window.ClassroomUI = {
     btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       onDownload(fileInfo, btn);
+    };
+    btn.onmousedown = (e) => {
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
     };
     return btn;
   },

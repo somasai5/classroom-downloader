@@ -46,34 +46,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Downloads file directly using Chrome Downloads API
+// Downloads file directly using Chrome Downloads API with 3-tier fallback
 async function handleDirectDownload({ url, filename, course, assignment }) {
   const cleanCourse = sanitize(course || 'Classroom');
   const cleanAssignment = sanitize(assignment || 'Materials');
   const cleanFile = sanitize(filename || 'File');
-  const path = 'Classroom/' + cleanCourse + '/' + cleanAssignment + '/' + cleanFile;
+  const relativePath = 'Classroom/' + cleanCourse + '/' + cleanAssignment + '/' + cleanFile;
 
   return new Promise((resolve, reject) => {
+    // 1. Try organized folder download
     chrome.downloads.download({
       url: url,
-      filename: path,
+      filename: relativePath,
       conflictAction: 'uniquify',
       saveAs: false
     }, (id) => {
-      if (chrome.runtime.lastError) {
-        // Fallback: download directly with just the clean file name
-        chrome.downloads.download({
-          url: url,
-          filename: cleanFile,
-          conflictAction: 'uniquify',
-          saveAs: false
-        }, (fallbackId) => {
-          if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-          resolve(fallbackId);
-        });
-      } else {
-        resolve(id);
+      if (!chrome.runtime.lastError && id) {
+        return resolve(id);
       }
+
+      // 2. Fallback: try download directly with clean filename in Downloads root
+      chrome.downloads.download({
+        url: url,
+        filename: cleanFile,
+        conflictAction: 'uniquify',
+        saveAs: false
+      }, async (fallbackId) => {
+        if (!chrome.runtime.lastError && fallbackId) {
+          return resolve(fallbackId);
+        }
+
+        // 3. Fallback: Fetch file via elevated background session cookies & download as data URI
+        try {
+          const fileData = await fetchAttachmentBase64(url);
+          const dataUri = 'data:application/octet-stream;base64,' + fileData.base64;
+          chrome.downloads.download({
+            url: dataUri,
+            filename: cleanFile,
+            conflictAction: 'uniquify',
+            saveAs: false
+          }, (dataId) => {
+            if (chrome.runtime.lastError) {
+              return reject(new Error(chrome.runtime.lastError.message));
+            }
+            resolve(dataId);
+          });
+        } catch (fetchErr) {
+          reject(fetchErr);
+        }
+      });
     });
   });
 }
@@ -154,8 +175,12 @@ function bufferToBase64(bytes) {
 
 function sanitize(str) {
   if (!str) return 'Untitled';
-  // Strip invalid characters and trailing dots/underscores/spaces for Windows compatibility
-  return str.replace(/[\\/:*?"<>|]/g, '_').replace(/[._ ]+$/, '').trim() || 'Untitled';
+  let s = str.replace(/[\\/:*?"<>|\r\n\t]/g, '_');
+  // Strip trailing dots, spaces, and ellipsis right before the file extension (e.g. "file ... .pdf" -> "file.pdf")
+  s = s.replace(/(\.{2,}|…|[._\s])+(\.[a-zA-Z0-9]{2,5})$/, '$2');
+  // Strip trailing dots, underscores, spaces at end of string
+  s = s.replace(/(\.{2,}|…)+/g, '_').replace(/[._ ]+$/, '').trim();
+  return s || 'Untitled';
 }
 
 async function updateStats({ filesAdded = 0, bytesAdded = 0, zipsAdded = 0 }) {

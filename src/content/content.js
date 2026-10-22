@@ -118,17 +118,28 @@
 
     // Support Single Material & Assignment Detail Pages (e.g. /c/.../m/... or /c/.../a/.../details)
     const locPath = (typeof window !== 'undefined' && window.location && (window.location.pathname || window.location.href)) || '';
+    const h1El = (typeof document.querySelector === 'function') ? document.querySelector('h1') : null;
     const isDetailPage = locPath.includes('/m/') || 
                          locPath.includes('/a/') || 
                          locPath.includes('/details') ||
-                         Boolean(typeof document.querySelector === 'function' && document.querySelector('main h1, [role="main"] h1'));
+                         Boolean(h1El && (!h1El.closest || !h1El.closest('.banner')));
 
     if (elements.length === 0 || isDetailPage) {
-      const detailContainer = document.querySelector('main') || 
-                              document.querySelector('[role="main"]') || 
-                              document.querySelector('.wXlZre') ||
-                              document.querySelector('.DshBEb');
-      if (detailContainer && detailContainer.querySelector('h1')) {
+      let detailContainer = null;
+      if (h1El && (!h1El.closest || !h1El.closest('.banner'))) {
+        detailContainer = (typeof h1El.closest === 'function') ? 
+          h1El.closest('main, [role="main"], [jscontroller], .wXlZre, .DshBEb, .A2Lzbe') : null;
+        if (!detailContainer) {
+          detailContainer = h1El.parentElement ? (h1El.parentElement.parentElement || h1El.parentElement) : document.body;
+        }
+      } else {
+        detailContainer = document.querySelector('main') || 
+                          document.querySelector('[role="main"]') || 
+                          document.querySelector('.wXlZre') ||
+                          document.querySelector('.DshBEb');
+      }
+
+      if (detailContainer) {
         if (isDetailPage) {
           elements = [detailContainer];
         } else if (elements.length === 0) {
@@ -162,7 +173,8 @@
     linkElements.forEach((a) => {
       if (a.querySelector('.cqd-file-dl-btn') || a.parentElement?.querySelector('.cqd-file-dl-btn')) return;
       const fileInfo = resolveAttachmentLink(a.href, a, postData.title);
-      if (fileInfo) {
+      // Only inject 1-click download button on actual downloadable files, NEVER on web links
+      if (fileInfo && fileInfo.extension !== 'link') {
         const btn = window.ClassroomUI.createSingleFileDownloadButton(fileInfo, (file, btnEl) => {
           handleDirectDownloadSingleFile(file, btnEl);
         });
@@ -221,6 +233,13 @@
     };
   }
 
+  function cleanTitle(rawTitle) {
+    if (!rawTitle) return 'Attachment';
+    let clean = rawTitle.replace(/(\.{2,}|…|[._\s])+$/, '').trim();
+    clean = clean.replace(/^[^\w\s\u00C0-\u024F]+/, '').trim();
+    return clean || 'Attachment';
+  }
+
   function extractCleanAttachmentTitle(anchorEl) {
     if (!anchorEl) return 'Attachment';
 
@@ -237,31 +256,29 @@
     if (explicitEl) {
       if (typeof explicitEl.getAttribute === 'function' && explicitEl.getAttribute('title')) {
         const t = explicitEl.getAttribute('title').trim();
-        if (t) return t;
+        if (t) return cleanTitle(t);
       }
       if (explicitEl.innerText && explicitEl.innerText.trim()) {
-        return explicitEl.innerText.trim();
+        return cleanTitle(explicitEl.innerText.trim());
       }
     }
 
     // 2. Look for aria-label (Classroom uses aria-label="Attachment: Lecture 4.pdf")
     const aria = (typeof anchorEl.getAttribute === 'function') ? (anchorEl.getAttribute('aria-label') || '') : '';
     if (aria) {
-      return aria.replace(/^Attachment:\s*/i, '').trim();
+      return cleanTitle(aria.replace(/^Attachment:\s*/i, '').trim());
     }
 
     // 3. Fallback: Parse innerText line-by-line, skipping emoji & size metadata
     const text = anchorEl.innerText || '';
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     for (const line of lines) {
-      // Strip leading emojis or non-word symbols
       const stripped = line.replace(/^[^\w\s\u00C0-\u024F]+/, '').trim();
-      // Skip lines that are just sizes (e.g. "12 MB", "1.1 MB", "PDF", "12 pages")
       if (stripped.length > 0 && !stripped.match(/^(\d+(\.\d+)?\s*(MB|KB|GB|B)|\d+\s*pages?|PDF Document|Google Doc|Google Slides|Google Sheet|Web Link)$/i)) {
-        return stripped;
+        return cleanTitle(stripped);
       }
     }
-    return lines[0] || 'Attachment';
+    return cleanTitle(lines[0]) || 'Attachment';
   }
 
   function stripExt(filename, ext) {
@@ -527,11 +544,21 @@
 
     // 1. If on Single Material or Assignment Detail Page, prioritize detailContainer
     if (isDetailPage) {
-      const detailContainer = document.querySelector('main') || 
-                              document.querySelector('[role="main"]') || 
-                              document.querySelector('.wXlZre') ||
-                              document.querySelector('.DshBEb');
-      if (detailContainer && detailContainer.querySelector('h1')) {
+      let detailContainer = null;
+      if (h1El && (!h1El.closest || !h1El.closest('.banner'))) {
+        detailContainer = (typeof h1El.closest === 'function') ? 
+          h1El.closest('main, [role="main"], [jscontroller], .wXlZre, .DshBEb, .A2Lzbe') : null;
+        if (!detailContainer) {
+          detailContainer = h1El.parentElement ? (h1El.parentElement.parentElement || h1El.parentElement) : document.body;
+        }
+      } else {
+        detailContainer = document.querySelector('main') || 
+                          document.querySelector('[role="main"]') || 
+                          document.querySelector('.wXlZre') ||
+                          document.querySelector('.DshBEb');
+      }
+
+      if (detailContainer) {
         const postData = parsePostData(detailContainer);
         if (postData && postData.attachments) {
           postData.attachments.forEach((fileInfo) => {
@@ -1043,7 +1070,11 @@
 
   function sanitize(str) {
     if (!str) return 'Material';
-    return str.replace(/[\\/:*?"<>|]/g, '_').replace(/[._ ]+$/, '').trim() || 'Material';
+    let s = str.replace(/[\\/:*?"<>|\r\n\t]/g, '_');
+    // Strip trailing dots, spaces, and ellipsis right before the file extension (e.g. "file ... .pdf" -> "file.pdf")
+    s = s.replace(/(\.{2,}|…|[._\s])+(\.[a-zA-Z0-9]{2,5})$/, '$2');
+    s = s.replace(/(\.{2,}|…)+/g, '_').replace(/[._ ]+$/, '').trim();
+    return s || 'Material';
   }
 
   function inferExtension(filename) {
