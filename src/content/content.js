@@ -37,38 +37,142 @@
     }
   }
 
+  let currentUrl = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
+
+  function removeMasterFloatingBar() {
+    if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+      const bar = document.getElementById('cqd-master-floating-bar');
+      if (bar && typeof bar.remove === 'function') bar.remove();
+    }
+  }
+
+  function handlePageNavigation() {
+    removeMasterFloatingBar();
+
+    // Clean up detached action bars from previously swapped views
+    if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+      document.querySelectorAll('.cqd-action-container').forEach(bar => {
+        const parent = bar.parentElement;
+        if (!parent || !document.body || !document.body.contains(parent)) {
+          bar.remove();
+        }
+      });
+    }
+
+    extractCourseTitle();
+    scanAndInject();
+
+    // Staggered scans to catch Classroom's async AJAX card rendering on back/forward
+    setTimeout(() => { extractCourseTitle(); scanAndInject(); }, 200);
+    setTimeout(() => { extractCourseTitle(); scanAndInject(); }, 500);
+    setTimeout(() => { extractCourseTitle(); scanAndInject(); }, 1000);
+  }
+
   function init() {
     loadSettings();
     extractCourseTitle();
     scanAndInject();
-    injectMasterBar();
+    removeMasterFloatingBar();
 
-    const observer = new MutationObserver((mutations) => {
-      // Ignore mutations originating from our own injected elements
-      const isInternal = mutations.every(m => {
-        const target = m.target;
-        return target && target.classList && (
-          target.classList.contains('cqd-action-container') ||
-          target.classList.contains('cqd-file-dl-btn') ||
-          target.classList.contains('cqd-badge') ||
-          target.id === 'cqd-master-floating-bar' ||
-          target.id === 'cqd-active-modal'
-        );
+    if (typeof window !== 'undefined') {
+      currentUrl = (window.location && window.location.href) || '';
+
+      // 1. Browser Back / Forward buttons (popstate & hashchange)
+      if (typeof window.addEventListener === 'function') {
+        window.addEventListener('popstate', () => {
+          currentUrl = window.location.href;
+          handlePageNavigation();
+        });
+        window.addEventListener('hashchange', () => {
+          currentUrl = window.location.href;
+          handlePageNavigation();
+        });
+      }
+
+      // 2. High-frequency URL monitor for silent SPA routing
+      if (typeof setInterval === 'function') {
+        setInterval(() => {
+          if (window.location && window.location.href !== currentUrl) {
+            currentUrl = window.location.href;
+            handlePageNavigation();
+          }
+        }, 200);
+      }
+
+      // 3. Intercept history.pushState & history.replaceState
+      if (window.history && typeof window.history.pushState === 'function' && typeof window.history.replaceState === 'function') {
+        const origPush = window.history.pushState;
+        window.history.pushState = function (...args) {
+          const res = origPush.apply(this, args);
+          currentUrl = window.location.href;
+          handlePageNavigation();
+          return res;
+        };
+
+        const origReplace = window.history.replaceState;
+        window.history.replaceState = function (...args) {
+          const res = origReplace.apply(this, args);
+          currentUrl = window.location.href;
+          handlePageNavigation();
+          return res;
+        };
+      }
+
+      // 4. In-app navigation clicks (Classroom header back arrow, course links, breadcrumbs)
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('click', (e) => {
+          const target = e.target;
+          if (!target) return;
+          const navEl = target.closest && target.closest(
+            '[aria-label*="Back" i], [aria-label*="back" i], [data-navigation-item], nav a, header a, [role="tab"], .YVvGBb'
+          );
+          if (navEl) {
+            setTimeout(handlePageNavigation, 150);
+            setTimeout(handlePageNavigation, 500);
+          }
+        }, true);
+      }
+    }
+
+    // 5. Message listener from background script on tab URL update
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message && message.type === 'PAGE_NAVIGATED') {
+          currentUrl = message.url || window.location.href;
+          handlePageNavigation();
+        }
       });
-      if (isInternal) return;
+    }
 
-      if (scanDebounceTimer) clearTimeout(scanDebounceTimer);
-      scanDebounceTimer = setTimeout(() => {
-        extractCourseTitle();
-        scanAndInject();
-        injectMasterBar();
-      }, 200);
-    });
+    // 6. DOM MutationObserver
+    if (typeof MutationObserver !== 'undefined' && document.body && typeof document.body.querySelector === 'function') {
+      const observer = new MutationObserver((mutations) => {
+        // Ignore mutations originating from our own injected elements
+        const isInternal = mutations.every(m => {
+          const target = m.target;
+          return target && target.classList && (
+            target.classList.contains('cqd-action-container') ||
+            target.classList.contains('cqd-file-dl-btn') ||
+            target.classList.contains('cqd-badge') ||
+            target.id === 'cqd-master-floating-bar' ||
+            target.id === 'cqd-active-modal'
+          );
+        });
+        if (isInternal) return;
 
-    observer.observe(document.body, { childList: true, subtree: true });
+        if (scanDebounceTimer) clearTimeout(scanDebounceTimer);
+        scanDebounceTimer = setTimeout(() => {
+          extractCourseTitle();
+          scanAndInject();
+        }, 200);
+      });
+
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
   }
 
   function extractCourseTitle() {
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return;
     const titleEl = document.querySelector('h1') || 
                     document.querySelector('[data-course-id] h1') ||
                     document.querySelector('.YVvGBb') ||
@@ -80,27 +184,11 @@
   }
 
   function injectMasterBar() {
-    if (window.ClassroomUI) {
-      window.ClassroomUI.renderMasterFloatingBar(
-        handleDownloadAllPageDirect,
-        handleDownloadAllPageZip,
-        handleSelectAllPageMaterials,
-        () => handleExpandAllPosts(document.getElementById('cqd-master-expand'))
-      );
-      updateMasterBarStatus();
-    }
+    removeMasterFloatingBar();
   }
 
   function updateMasterBarStatus() {
-    if (window.ClassroomUI && window.ClassroomUI.updateMasterBar) {
-      const files = getAllPageAttachments();
-      const noteFiles = files.filter(f => f.extension !== 'link');
-      if (noteFiles.length > 0) {
-        window.ClassroomUI.updateMasterBar(noteFiles.length, true);
-      } else {
-        window.ClassroomUI.updateMasterBar(files.length, false);
-      }
-    }
+    removeMasterFloatingBar();
   }
 
   function scanAndInject() {
