@@ -26,22 +26,28 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const safeSend = (payload) => {
+    try {
+      sendResponse(payload);
+    } catch (e) {}
+  };
+
   if (message.type === 'DOWNLOAD_FILE') {
     handleDirectDownload(message.payload)
-      .then(res => sendResponse({ success: true, res }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(res => safeSend({ success: true, res }))
+      .catch(err => safeSend({ success: false, error: err.message }));
     return true;
   }
 
   if (message.type === 'FETCH_ATTACHMENT_BASE64') {
     fetchAttachmentBase64(message.payload.url)
-      .then(data => sendResponse({ success: true, data }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(data => safeSend({ success: true, data }))
+      .catch(err => safeSend({ success: false, error: err.message }));
     return true;
   }
 
   if (message.type === 'UPDATE_STATS') {
-    updateStats(message.payload).then(() => sendResponse({ success: true }));
+    updateStats(message.payload).then(() => safeSend({ success: true })).catch(() => {});
     return true;
   }
 });
@@ -51,7 +57,11 @@ if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const tabUrl = (changeInfo && changeInfo.url) || (tab && tab.url) || '';
     if (tabUrl.includes('classroom.google.com')) {
-      chrome.tabs.sendMessage(tabId, { type: 'PAGE_NAVIGATED', url: tabUrl }).catch(() => {});
+      chrome.tabs.sendMessage(tabId, { type: 'PAGE_NAVIGATED', url: tabUrl }, () => {
+        if (chrome.runtime.lastError) {
+          // Suppress error when tab content script is not yet listening or closed
+        }
+      });
     }
   });
 }
