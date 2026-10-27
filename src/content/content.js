@@ -61,18 +61,23 @@
 
     extractCourseTitle();
     scanAndInject();
+    injectMasterBar();
 
-    // Staggered scans to catch Classroom's async AJAX card rendering on back/forward
-    setTimeout(() => { extractCourseTitle(); scanAndInject(); }, 200);
-    setTimeout(() => { extractCourseTitle(); scanAndInject(); }, 500);
-    setTimeout(() => { extractCourseTitle(); scanAndInject(); }, 1000);
+    // Staggered scans to catch Classroom's async AJAX card rendering on SPA navigation
+    [100, 300, 600, 1000, 1800, 3000].forEach(delay => {
+      setTimeout(() => {
+        extractCourseTitle();
+        scanAndInject();
+        injectMasterBar();
+      }, delay);
+    });
   }
 
   function init() {
     loadSettings();
     extractCourseTitle();
     scanAndInject();
-    removeMasterFloatingBar();
+    injectMasterBar();
 
     if (typeof window !== 'undefined') {
       currentUrl = (window.location && window.location.href) || '';
@@ -89,52 +94,81 @@
         });
       }
 
-      // 2. High-frequency URL monitor for silent SPA routing
+      // 2. Main-world pushState & replaceState interceptor
+      try {
+        const navScript = document.createElement('script');
+        navScript.textContent = `
+          (function() {
+            const fire = () => window.dispatchEvent(new CustomEvent('__CLASSROOM_SUITE_ROUTE_CHANGE__'));
+            const p = history.pushState;
+            history.pushState = function() {
+              const ret = p.apply(this, arguments);
+              fire();
+              return ret;
+            };
+            const r = history.replaceState;
+            history.replaceState = function() {
+              const ret = r.apply(this, arguments);
+              fire();
+              return ret;
+            };
+            window.addEventListener('popstate', fire);
+          })();
+        `;
+        (document.head || document.documentElement).appendChild(navScript);
+        navScript.remove();
+        window.addEventListener('__CLASSROOM_SUITE_ROUTE_CHANGE__', () => {
+          currentUrl = window.location.href;
+          handlePageNavigation();
+        });
+      } catch (e) {}
+
+      // 3. High-frequency URL monitor & Continuous Heartbeat for newly opened assignments
       if (typeof setInterval === 'function') {
+        // Fast URL change detector (150ms)
         setInterval(() => {
           if (window.location && window.location.href !== currentUrl) {
             currentUrl = window.location.href;
             handlePageNavigation();
           }
-        }, 200);
+        }, 150);
+
+        // Continuous liveness heartbeat (350ms): instantly detects newly expanded/opened assignment cards without needing reload
+        setInterval(() => {
+          if (typeof document === 'undefined' || !document.body) return;
+          const cards = document.querySelectorAll(
+            '[aria-label*="Attachment" i], .attachment-card, [data-drive-id]'
+          );
+          for (let i = 0; i < cards.length; i++) {
+            const card = cards[i];
+            if (!card.querySelector('.cqd-file-dl-btn')) {
+              scanAndInject();
+              break;
+            }
+          }
+        }, 350);
       }
 
-      // 3. Intercept history.pushState & history.replaceState
-      if (window.history && typeof window.history.pushState === 'function' && typeof window.history.replaceState === 'function') {
-        const origPush = window.history.pushState;
-        window.history.pushState = function (...args) {
-          const res = origPush.apply(this, args);
-          currentUrl = window.location.href;
-          handlePageNavigation();
-          return res;
-        };
-
-        const origReplace = window.history.replaceState;
-        window.history.replaceState = function (...args) {
-          const res = origReplace.apply(this, args);
-          currentUrl = window.location.href;
-          handlePageNavigation();
-          return res;
-        };
-      }
-
-      // 4. In-app navigation clicks (Classroom header back arrow, course links, breadcrumbs)
+      // 4. User Interaction Listener: whenever the user clicks an assignment, material, tab, or link
       if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
         document.addEventListener('click', (e) => {
           const target = e.target;
           if (!target) return;
-          const navEl = target.closest && target.closest(
-            '[aria-label*="Back" i], [aria-label*="back" i], [data-navigation-item], nav a, header a, [role="tab"], .YVvGBb'
-          );
-          if (navEl) {
-            setTimeout(handlePageNavigation, 150);
-            setTimeout(handlePageNavigation, 500);
-          }
+          if (target.closest && target.closest('.cqd-btn, .cqd-file-dl-btn, .cqd-master-bar, #cqd-active-modal')) return;
+
+          // When user clicks anywhere (e.g. expanding an assignment, opening a material, switching tabs),
+          // schedule staggered scans to seamlessly catch async AJAX content
+          [50, 150, 400, 800, 1500, 2500, 4000].forEach(delay => {
+            setTimeout(() => {
+              extractCourseTitle();
+              scanAndInject();
+            }, delay);
+          });
         }, true);
       }
     }
 
-    // 5. Message listener from background script on tab URL update
+    // 4. Message listener from background script on tab URL update
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
       chrome.runtime.onMessage.addListener((message) => {
         if (message && message.type === 'PAGE_NAVIGATED') {
@@ -144,7 +178,7 @@
       });
     }
 
-    // 6. DOM MutationObserver
+    // 5. DOM MutationObserver: reacts instantly to DOM insertions and accordion attribute expansions
     if (typeof MutationObserver !== 'undefined' && document.body && typeof document.body.querySelector === 'function') {
       const observer = new MutationObserver((mutations) => {
         // Ignore mutations originating from our own injected elements
@@ -164,10 +198,15 @@
         scanDebounceTimer = setTimeout(() => {
           extractCourseTitle();
           scanAndInject();
-        }, 200);
+        }, 120);
       });
 
-      observer.observe(document.body, { childList: true, subtree: true });
+      observer.observe(document.body, { 
+        childList: true, 
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['aria-expanded', 'class', 'style', 'hidden', 'data-item-id']
+      });
     }
   }
 
@@ -184,98 +223,169 @@
   }
 
   function injectMasterBar() {
-    removeMasterFloatingBar();
+    if (window.ClassroomUI && typeof window.ClassroomUI.renderMasterFloatingBar === 'function') {
+      window.ClassroomUI.renderMasterFloatingBar(
+        handleDownloadAllPageDirect,
+        handleDownloadAllPageZip,
+        handleSelectAllPageMaterials,
+        () => handleExpandAllPosts(document.getElementById('cqd-master-expand'))
+      );
+      updateMasterBarStatus();
+    }
   }
 
   function updateMasterBarStatus() {
-    removeMasterFloatingBar();
+    if (window.ClassroomUI && typeof window.ClassroomUI.updateMasterBar === 'function') {
+      const files = getAllPageAttachments();
+      const noteFiles = files.filter(f => f.extension !== 'link');
+      if (noteFiles.length > 0) {
+        window.ClassroomUI.updateMasterBar(noteFiles.length, true);
+      } else {
+        window.ClassroomUI.updateMasterBar(files.length, false);
+      }
+    }
   }
 
-  function scanAndInject() {
-    // Scan all possible Classroom card containers and mock sandbox posts
+  function isDetailPageUrl() {
+    const locPath = (typeof window !== 'undefined' && window.location && (window.location.pathname || window.location.href)) || '';
+    return locPath.includes('/m/') || locPath.includes('/a/') || locPath.includes('/details') || locPath.includes('/sa/');
+  }
+
+  function findPostContainers() {
+    const postContainers = new Set();
+
+    // 1. Direct post card selectors (mock sandbox + common Classroom classes)
     const postSelectors = [
       '[data-stream-item-id]',
+      '.g-classroom-post',
       '[jscontroller="A2Lzbe"]',
       '.VBEdtc-Wvd9cc',
       '.ySjX5d',
-      '.onkcGd',
-      '.g-classroom-post'
+      '.onkcGd'
     ];
+    document.querySelectorAll(postSelectors.join(',')).forEach(el => {
+      if (el && (el.offsetHeight > 40 || el.classList.contains('g-classroom-post') || el.hasAttribute('data-stream-item-id'))) {
+        postContainers.add(el);
+      }
+    });
 
-    let elements = Array.from(document.querySelectorAll(postSelectors.join(',')));
+    // 2. Discover post containers by bottom-up traversal from comment sections (every Classroom post card has comments)
+    const commentInputs = document.querySelectorAll(
+      '[aria-label*="comment" i], [data-placeholder*="comment" i], .cptk5c, form[action*="comment"]'
+    );
+    commentInputs.forEach(input => {
+      let curr = input.parentElement;
+      while (curr && curr !== document.body && curr.tagName !== 'MAIN') {
+        if (curr.getAttribute('data-stream-item-id') || 
+            curr.classList.contains('onkcGd') ||
+            curr.classList.contains('g-classroom-post') ||
+            (curr.parentElement && (curr.parentElement.tagName === 'MAIN' || curr.parentElement.getAttribute('role') === 'feed' || curr.parentElement.getAttribute('role') === 'main'))) {
+          postContainers.add(curr);
+          break;
+        }
+        curr = curr.parentElement;
+      }
+    });
 
-    // Support Single Material & Assignment Detail Pages (e.g. /c/.../m/... or /c/.../a/.../details)
-    const locPath = (typeof window !== 'undefined' && window.location && (window.location.pathname || window.location.href)) || '';
-    const h1El = (typeof document.querySelector === 'function') ? document.querySelector('h1') : null;
-    const isDetailPage = locPath.includes('/m/') || 
-                         locPath.includes('/a/') || 
-                         locPath.includes('/details') ||
-                         Boolean(h1El && (!h1El.closest || !h1El.closest('.banner')));
+    // 3. Discover post containers by bottom-up traversal from attachment cards
+    const attachmentNodes = document.querySelectorAll(
+      '[aria-label*="Attachment" i], .attachment-card, [data-drive-id], a[href*="drive.google.com/file/d/"], a[href*="docs.google.com/presentation/"], a[href*="docs.google.com/document/"], a[href*="docs.google.com/spreadsheets/"]'
+    );
+    attachmentNodes.forEach(att => {
+      let curr = att.parentElement;
+      while (curr && curr !== document.body && curr.tagName !== 'MAIN') {
+        if (curr.getAttribute('data-stream-item-id') || 
+            curr.classList.contains('onkcGd') ||
+            curr.classList.contains('g-classroom-post') ||
+            curr.querySelector('[aria-label*="comment" i], .cptk5c, [data-placeholder*="comment" i]') ||
+            (curr.parentElement && (curr.parentElement.tagName === 'MAIN' || curr.parentElement.getAttribute('role') === 'feed' || curr.parentElement.getAttribute('role') === 'main'))) {
+          postContainers.add(curr);
+          break;
+        }
+        curr = curr.parentElement;
+      }
+    });
 
-    if (elements.length === 0 || isDetailPage) {
-      // Find the main container that contains the h1 and all attachment cards
-      const validBody = (typeof document.body === 'object' && document.body && typeof document.body.querySelector === 'function') ? document.body : null;
-      let detailContainer = (h1El && typeof h1El.closest === 'function' && h1El.closest('main, [role="main"]')) ||
-                            (typeof document.querySelector === 'function' && (
-                              document.querySelector('main') || 
-                              document.querySelector('[role="main"]') || 
-                              document.querySelector('.wXlZre') || 
-                              document.querySelector('.DshBEb')
-                            )) ||
-                            validBody;
-
+    // 4. Handle Single Material & Assignment Detail Pages (e.g. /c/.../m/... or /c/.../a/.../details)
+    const isDetailPage = isDetailPageUrl();
+    if (isDetailPage || postContainers.size === 0) {
+      const detailContainer = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
       if (detailContainer && typeof detailContainer.querySelector === 'function') {
         if (isDetailPage) {
-          elements = [detailContainer];
-        } else if (elements.length === 0) {
-          elements.push(detailContainer);
+          return [detailContainer];
+        } else if (postContainers.size === 0) {
+          postContainers.add(detailContainer);
         }
       }
     }
 
+    return Array.from(postContainers);
+  }
+
+  function scanAndInject() {
+    // Remove any post-level action bars so the stream stays completely clean and uncluttered
+    document.querySelectorAll('.cqd-action-container').forEach(el => el.remove());
+
+    const elements = findPostContainers();
+
     elements.forEach((postEl) => {
       if (!postEl || typeof postEl.querySelector !== 'function') return;
-      const hasActionBar = postEl.querySelector('.cqd-action-container');
-      if (hasActionBar && processedContainers.has(postEl)) {
-        return;
-      }
 
       const postData = parsePostData(postEl);
       if (postData && postData.attachments.length > 0) {
-        if (!hasActionBar) {
-          processedContainers.add(postEl);
-          injectActionBar(postEl, postData);
-        }
         injectPerAttachmentDownloadButtons(postEl, postData);
       }
     });
+
+    // Global pass to ensure any newly opened or expanded assignment cards across the entire view get buttons immediately
+    if (typeof document !== 'undefined' && document.body) {
+      injectPerAttachmentDownloadButtons(document.body, null);
+    }
 
     updateMasterBarStatus();
   }
 
   function injectPerAttachmentDownloadButtons(postEl, postData) {
     if (!window.ClassroomUI || !window.ClassroomUI.createSingleFileDownloadButton) return;
-    const linkElements = postEl.querySelectorAll('a[href], [data-drive-id], [data-url], [data-href]');
-    linkElements.forEach((a) => {
-      if (a.querySelector('.cqd-file-dl-btn') || a.parentElement?.querySelector('.cqd-file-dl-btn')) return;
-      let href = a.getAttribute('href') || a.getAttribute('data-url') || a.getAttribute('data-href');
-      if (!href && a.getAttribute('data-drive-id')) {
-        href = 'https://drive.google.com/file/d/' + a.getAttribute('data-drive-id') + '/view';
+    const root = (postEl && typeof postEl.querySelectorAll === 'function') ? postEl : document;
+    const candidates = root.querySelectorAll(
+      '[aria-label*="Attachment" i], .attachment-card, [data-drive-id], a[href*="drive.google.com/file/d/"], a[href*="docs.google.com/presentation/"], a[href*="docs.google.com/document/"], a[href*="docs.google.com/spreadsheets/"]'
+    );
+
+    candidates.forEach((el) => {
+      // Do not inject the bulky card button into plain text paragraphs
+      const isInlineTextLink = el.tagName === 'A' && 
+                               (el.closest('.post-description, .tL92xf, .nfnrId, p') || el.textContent.trim().startsWith('http')) && 
+                               !el.closest('[aria-label*="Attachment" i], .attachment-card, .VBEdtc-Wvd9cc, .P335nb, .bFjUmb-TvmHG');
+      if (isInlineTextLink) return;
+
+      const card = el.closest('[aria-label*="Attachment" i], .attachment-card, .VBEdtc-Wvd9cc, .P335nb, .bFjUmb-TvmHG') || el;
+      if (card.querySelector('.cqd-file-dl-btn')) return;
+
+      let href = el.getAttribute('href') || el.getAttribute('data-url') || el.getAttribute('data-href');
+      if (!href && card.getAttribute('data-drive-id')) {
+        href = 'https://drive.google.com/file/d/' + card.getAttribute('data-drive-id') + '/view';
       }
       if (!href) {
-        const innerA = a.querySelector('a[href]');
-        if (innerA) href = innerA.href;
+        const innerA = card.querySelector('a[href]');
+        if (innerA) href = innerA.getAttribute('href');
+      }
+      if (!href && card.getAttribute('aria-label') && postData && postData.attachments) {
+        const cardTitle = extractCleanAttachmentTitle(card);
+        const match = postData.attachments.find(a => a.title === cardTitle || cardTitle.includes(a.title) || a.title.includes(cardTitle));
+        if (match) href = match.downloadUrl;
       }
       if (!href) return;
 
-      const fileInfo = resolveAttachmentLink(href, a, postData.title);
+      const postTitle = (postData && postData.title) || courseTitle;
+      const fileInfo = resolveAttachmentLink(href, card, postTitle);
       // Only inject 1-click download button on actual downloadable files, NEVER on web links
       if (fileInfo && fileInfo.extension !== 'link') {
         const btn = window.ClassroomUI.createSingleFileDownloadButton(fileInfo, (file, btnEl) => {
           handleDirectDownloadSingleFile(file, btnEl);
         });
-        a.style.position = 'relative';
-        a.appendChild(btn);
+        card.style.position = 'relative';
+        card.appendChild(btn);
       }
     });
   }
@@ -303,20 +413,28 @@
     const description = descEl ? descEl.innerText.trim() : '';
 
     const attachments = [];
-    const linkElements = el.querySelectorAll('a[href], [data-drive-id], [data-url], [data-href]');
+    const candidateElements = el.querySelectorAll(
+      'a[href], [data-drive-id], [data-url], [data-href], [aria-label*="Attachment" i], .attachment-card'
+    );
 
-    linkElements.forEach((a) => {
-      let href = a.getAttribute('href') || a.getAttribute('data-url') || a.getAttribute('data-href');
-      if (!href && a.getAttribute('data-drive-id')) {
-        href = 'https://drive.google.com/file/d/' + a.getAttribute('data-drive-id') + '/view';
+    candidateElements.forEach((item) => {
+      let href = item.getAttribute('href') || item.getAttribute('data-url') || item.getAttribute('data-href');
+      if (!href && item.getAttribute('data-drive-id')) {
+        href = 'https://drive.google.com/file/d/' + item.getAttribute('data-drive-id') + '/view';
       }
       if (!href) {
-        const innerA = a.querySelector('a[href]');
-        if (innerA) href = innerA.href;
+        const innerA = item.tagName === 'A' ? item : item.querySelector('a[href]');
+        if (innerA) href = innerA.getAttribute('href') || innerA.href;
+      }
+      if (!href && item.getAttribute('data-id')) {
+        const idVal = item.getAttribute('data-id');
+        if (/^[a-zA-Z0-9_-]{20,}$/.test(idVal)) {
+          href = 'https://drive.google.com/file/d/' + idVal + '/view';
+        }
       }
       if (!href) return;
 
-      const fileInfo = resolveAttachmentLink(href, a, title);
+      const fileInfo = resolveAttachmentLink(href, item, title);
       if (fileInfo) {
         if (!attachments.some(att => att.downloadUrl === fileInfo.downloadUrl)) {
           attachments.push(fileInfo);
@@ -366,7 +484,14 @@
 
       const aria = anchorEl.getAttribute('aria-label');
       if (aria && aria.trim()) {
-        const cleanedAria = aria.replace(/^Attachment:\s*/i, '').trim();
+        let cleanedAria = aria.replace(/^Attachment:\s*/i, '').trim();
+        const colonIdx = cleanedAria.lastIndexOf(':');
+        if (colonIdx !== -1) {
+          const candidate = cleanedAria.substring(colonIdx + 1).trim();
+          if (candidate && !isSystemLabel(candidate)) {
+            cleanedAria = candidate;
+          }
+        }
         if (cleanedAria && !isSystemLabel(cleanedAria)) {
           return cleanTitle(cleanedAria);
         }
@@ -394,7 +519,14 @@
       if (ariaEl && typeof ariaEl.getAttribute === 'function') {
         const a = ariaEl.getAttribute('aria-label');
         if (a && a.trim()) {
-          const cleaned = a.replace(/^Attachment:\s*/i, '').trim();
+          let cleaned = a.replace(/^Attachment:\s*/i, '').trim();
+          const colonIdx = cleaned.lastIndexOf(':');
+          if (colonIdx !== -1) {
+            const candidate = cleaned.substring(colonIdx + 1).trim();
+            if (candidate && !isSystemLabel(candidate)) {
+              cleaned = candidate;
+            }
+          }
           if (cleaned && !isSystemLabel(cleaned)) {
             return cleanTitle(cleaned);
           }
@@ -451,7 +583,7 @@
 
     // 1. Ignore links inside Google top bar, header, or navigation drawer
     if (anchorEl && typeof anchorEl.closest === 'function') {
-      if (anchorEl.closest('header, nav, #gb, .gb_, [role="banner"], [role="navigation"], .app-bar, .drawer, [data-is-drawer="true"], aside, .tUcf0, .W3hIae, .f0fHw, [aria-label*="Main menu"], [aria-label*="Main Menu"], [aria-label*="Navigation drawer"], .Wk67ed, .cptk5c, .comments, [aria-label*="comment" i]')) {
+      if (anchorEl.closest('header, nav, #gb, .gb_, [role="banner"], [role="navigation"], .app-bar, .drawer, [data-is-drawer="true"], aside, [aria-label*="Main menu" i], [aria-label*="Navigation drawer" i]')) {
         return true;
       }
     }
@@ -575,7 +707,7 @@
         id: fileId,
         title: ensureExtension(text, ext),
         extension: ext,
-        typeLabel: ext === 'pdf' ? 'PDF' : 'Drive File',
+        typeLabel: ext ? ext.toUpperCase() : 'Drive File',
         downloadUrl: 'https://drive.google.com/uc?export=download&id=' + fileId + '&confirm=t&authuser=' + authUser,
         assignment: postTitle
       };
@@ -663,42 +795,35 @@
       handleViewDiff
     );
 
-    const h1El = postEl.querySelector('h1');
-    const headerContainer = h1El ? (h1El.closest('.Q814ie, .wXlZre, .DshBEb, .post-header') || h1El.parentElement || h1El) : null;
-    const targetContainer = headerContainer ||
-                            postEl.querySelector('.Q814ie') || 
-                            postEl.querySelector('.A65qq') || 
-                            postEl.querySelector('.post-header') ||
-                            postEl.querySelector('h2') ||
-                            postEl;
+    // 1. Prefer inserting right above the comment section inside the post
+    const commentSection = postEl.querySelector('[aria-label*="comment" i], .cptk5c, form, [data-placeholder*="comment" i]');
+    if (commentSection) {
+      commentSection.insertAdjacentElement('beforebegin', actionBar);
+      return;
+    }
 
-    targetContainer.insertAdjacentElement('afterend', actionBar);
+    // 2. Next prefer inserting after the attachments container / list
+    const attContainer = postEl.querySelector('.attachments-grid, [aria-label*="Attachment" i], .attachment-card');
+    if (attContainer) {
+      const parentBlock = attContainer.closest('.attachments-grid, [role="group"], [role="region"], div');
+      if (parentBlock && parentBlock !== postEl) {
+        parentBlock.insertAdjacentElement('afterend', actionBar);
+        return;
+      }
+    }
+
+    // 3. Fallback: append inside post card
+    postEl.appendChild(actionBar);
   }
 
   // Scan and gather all attachments on the entire page
   function getAllPageAttachments() {
     const allFiles = [];
 
-    const locPath = (typeof window !== 'undefined' && window.location && (window.location.pathname || window.location.href)) || '';
-    const isDetailPage = locPath.includes('/m/') || 
-                         locPath.includes('/a/') || 
-                         locPath.includes('/details') ||
-                         Boolean(typeof document.querySelector === 'function' && document.querySelector('main h1, [role="main"] h1'));
-
     // 1. If on Single Material or Assignment Detail Page, prioritize detailContainer
-    if (isDetailPage) {
-      const h1El = (typeof document.querySelector === 'function') ? document.querySelector('h1') : null;
-      const validBody = (typeof document.body === 'object' && document.body && typeof document.body.querySelector === 'function') ? document.body : null;
-      let detailContainer = (h1El && typeof h1El.closest === 'function' && h1El.closest('main, [role="main"]')) ||
-                            (typeof document.querySelector === 'function' && (
-                              document.querySelector('main') || 
-                              document.querySelector('[role="main"]') || 
-                              document.querySelector('.wXlZre') || 
-                              document.querySelector('.DshBEb')
-                            )) ||
-                            validBody;
-
-      if (detailContainer && typeof detailContainer.querySelector === 'function') {
+    if (isDetailPageUrl()) {
+      const detailContainer = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
+      if (detailContainer) {
         const postData = parsePostData(detailContainer);
         if (postData && postData.attachments) {
           postData.attachments.forEach((fileInfo) => {
@@ -712,50 +837,17 @@
     }
 
     // 2. Gather attachments from all detected course post containers
-    const postSelectors = [
-      '[data-stream-item-id]',
-      '[jscontroller="A2Lzbe"]',
-      '.VBEdtc-Wvd9cc',
-      '.ySjX5d',
-      '.onkcGd',
-      '.g-classroom-post'
-    ];
-
-    let postElements = Array.from(document.querySelectorAll(postSelectors.join(',')));
-
-    // Fallback: If on Single Material or Assignment Detail Page
-    if (postElements.length === 0) {
-      const detailContainer = document.querySelector('main') || 
-                              document.querySelector('[role="main"]') || 
-                              document.querySelector('.wXlZre') ||
-                              document.querySelector('.DshBEb');
-      if (detailContainer && detailContainer.querySelector('h1')) {
-        postElements = [detailContainer];
-      }
-    }
-
+    const postElements = findPostContainers();
     postElements.forEach((postEl) => {
-      const postTitle = (parsePostData(postEl) || {}).title || 'Course Materials';
-      postEl.querySelectorAll('a[href]').forEach((a) => {
-        if (isSystemOrNavUrl(a.href, a)) return;
-        const fileInfo = resolveAttachmentLink(a.href, a, postTitle);
-        if (fileInfo && !allFiles.some(f => f.downloadUrl === fileInfo.downloadUrl)) {
-          allFiles.push(fileInfo);
-        }
-      });
+      const postData = parsePostData(postEl);
+      if (postData && postData.attachments) {
+        postData.attachments.forEach((fileInfo) => {
+          if (!allFiles.some(f => f.downloadUrl === fileInfo.downloadUrl)) {
+            allFiles.push(fileInfo);
+          }
+        });
+      }
     });
-
-    // 3. Fallback: If no posts matched, scan links inside main container, strictly excluding system/nav links
-    if (allFiles.length === 0) {
-      const mainContainer = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
-      mainContainer.querySelectorAll('a[href]').forEach((a) => {
-        if (isSystemOrNavUrl(a.href, a)) return;
-        const fileInfo = resolveAttachmentLink(a.href, a, 'Course Materials');
-        if (fileInfo && !allFiles.some(f => f.downloadUrl === fileInfo.downloadUrl)) {
-          allFiles.push(fileInfo);
-        }
-      });
-    }
 
     return allFiles;
   }
@@ -788,7 +880,7 @@
     if (itemsToClick.length === 0) {
       const cards = document.querySelectorAll('[data-stream-item-id], .onkcGd, [jscontroller="A2Lzbe"]');
       cards.forEach(card => {
-        if (!card.querySelector('.cqd-action-container') && !card.querySelector('a[href*="drive.google.com"]')) {
+        if (!card.querySelector('.cqd-file-dl-btn') && !card.querySelector('a[href*="drive.google.com"]')) {
           const btn = card.querySelector('[role="button"]') || card.querySelector('.asQXV') || card.querySelector('.A65qq') || card;
           if (btn && !itemsToClick.includes(btn)) itemsToClick.push(btn);
         }

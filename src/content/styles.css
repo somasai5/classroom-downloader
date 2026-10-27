@@ -7,9 +7,23 @@
   --cqd-radius: 12px;
 }
 
-/* Master Floating Bottom-Right Toolbar (Deprecated - replaced by post-level 1-click action bars) */
+/* Master Floating Bottom-Right Toolbar */
 .cqd-master-bar {
-  display: none !important;
+  position: fixed;
+  bottom: 24px;
+  right: 84px; /* Positioned cleanly beside Google Classroom's help '?' button */
+  background: #0f172a;
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  z-index: 999999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  animation: cqdSlideUp 0.3s ease-out;
 }
 
 .cqd-master-brand {
@@ -248,31 +262,32 @@
 
 /* 1-Click Download Button on Every Attachment Card */
 .cqd-file-dl-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 11px;
-  font-size: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
   font-weight: 600;
   border-radius: 6px;
-  border: 1px solid #4338ca;
+  border: 1px solid rgba(255, 255, 255, 0.25);
   background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
   color: #ffffff !important;
   cursor: pointer;
   outline: none;
   user-select: none;
   transition: all 0.15s ease-in-out;
-  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3);
-  margin-left: auto;
-  flex-shrink: 0;
-  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 1000;
   text-decoration: none;
 }
 
 .cqd-file-dl-btn:hover {
   background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(79, 70, 229, 0.4);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.5);
 }
 
 .cqd-file-dl-btn:active {
@@ -283,4 +298,13 @@
   background: #10b981 !important;
   border-color: #059669 !important;
   color: #ffffff !important;
+}
+
+.attachment-card {
+  position: relative !important;
+}
+
+/* Post-level action container is hidden to eliminate redundant buttons; 1-click Download is directly on attachment cards and bulk operations are in the master bar */
+.cqd-action-container {
+  display: none !important;
 }

@@ -49,8 +49,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Notify tabs when URL changes via SPA back/forward navigation in Google Classroom
 if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && changeInfo.url.includes('classroom.google.com')) {
-      chrome.tabs.sendMessage(tabId, { type: 'PAGE_NAVIGATED', url: changeInfo.url }).catch(() => {});
+    const tabUrl = (changeInfo && changeInfo.url) || (tab && tab.url) || '';
+    if (tabUrl.includes('classroom.google.com')) {
+      chrome.tabs.sendMessage(tabId, { type: 'PAGE_NAVIGATED', url: tabUrl }).catch(() => {});
     }
   });
 }

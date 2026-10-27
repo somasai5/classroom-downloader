@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "node test/dry_run_test.js",
-    "generate-icons": "node generate-icons.js"
+    "generate-icons": "node generate-icons.js",
+    "package": "powershell -Command \"Compress-Archive -Path src\\* -DestinationPath classroom-downloader.zip -Force\""
   },
   "keywords": [],
   "author": "",

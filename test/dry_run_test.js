@@ -99,6 +99,8 @@ async function runAllTests() {
     ctx.generateMockAttachmentContent = generateMockAttachmentContent;
     ctx.userSettings = userSettings;
     ctx.isSystemOrNavUrl = isSystemOrNavUrl;
+    ctx.isDetailPageUrl = isDetailPageUrl;
+    ctx.findPostContainers = findPostContainers;
   `);
   evalFunc(ctx, mockWindow, mockDocument, mockMutationObserver);
 
@@ -505,6 +507,66 @@ async function runAllTests() {
     zipBtn.onclick({ stopPropagation: () => {} });
     assert(zipDownloadedData, 'ZIP callback fired');
     assert.strictEqual(zipDownloadedData.attachments.length, 2, 'Must only zip the 2 class note PDFs');
+  });
+
+  test('Title extraction accurately parses real Google Classroom nested aria-labels (Unit 2.pptx, Flyer.png)', () => {
+    // 1. PowerPoint card format: "Attachment: PowerPoint: Unit 2.pptx"
+    const pptxCard = {
+      getAttribute: (attr) => (attr === 'aria-label' ? 'Attachment: PowerPoint: Unit 2.pptx' : null),
+      querySelector: () => null,
+      innerText: 'Unit 2.pptx\nMicrosoft PowerPoint'
+    };
+    assert.strictEqual(ctx.extractCleanAttachmentTitle(pptxCard), 'Unit 2.pptx');
+
+    // 2. Full title format: "Attachment: Microsoft PowerPoint: Unit 2.pptx"
+    const msPptxCard = {
+      getAttribute: (attr) => (attr === 'aria-label' ? 'Attachment: Microsoft PowerPoint: Unit 2.pptx' : null),
+      querySelector: () => null,
+      innerText: 'Unit 2.pptx\nMicrosoft PowerPoint'
+    };
+    assert.strictEqual(ctx.extractCleanAttachmentTitle(msPptxCard), 'Unit 2.pptx');
+
+    // 3. Image card format: "Attachment: Image: Flyer.png"
+    const imgCard = {
+      getAttribute: (attr) => (attr === 'aria-label' ? 'Attachment: Image: Flyer.png' : null),
+      querySelector: () => null,
+      innerText: 'Flyer.png\nImage'
+    };
+    assert.strictEqual(ctx.extractCleanAttachmentTitle(imgCard), 'Flyer.png');
+
+    // 4. Resolve link for Unit 2.pptx with drive URL
+    const resolvedPptx = ctx.resolveAttachmentLink(
+      'https://drive.google.com/file/d/1Unit2PptxFileId12345/view?usp=drive_web',
+      pptxCard,
+      'Syllabus: Quantum Gates'
+    );
+    assert(resolvedPptx, 'Unit 2.pptx must resolve');
+    assert.strictEqual(resolvedPptx.extension, 'pptx');
+    assert.strictEqual(resolvedPptx.title, 'Unit 2.pptx');
+    assert.strictEqual(resolvedPptx.typeLabel, 'PPTX');
+    assert(resolvedPptx.downloadUrl.includes('export=download&id=1Unit2PptxFileId12345'));
+
+    // 5. Resolve link for Flyer.png with drive URL
+    const resolvedPng = ctx.resolveAttachmentLink(
+      'https://drive.google.com/file/d/2FlyerPngFileId67890/view?usp=drive_web',
+      imgCard,
+      'Announcements'
+    );
+    assert(resolvedPng, 'Flyer.png must resolve');
+    assert.strictEqual(resolvedPng.extension, 'png');
+    assert.strictEqual(resolvedPng.title, 'Flyer.png');
+    assert.strictEqual(resolvedPng.typeLabel, 'PNG');
+  });
+
+  test('isDetailPageUrl accurately distinguishes Stream from Material/Assignment detail views', () => {
+    mockWindow.location.pathname = '/u/0/c/ODY5MDkzOTQ4NDM5';
+    assert.strictEqual(ctx.isDetailPageUrl(), false, 'Main stream page must NOT be treated as a single detail page');
+
+    mockWindow.location.pathname = '/u/0/c/ODY5MDkzOTQ4NDM5/m/NDc4MTY3';
+    assert.strictEqual(ctx.isDetailPageUrl(), true, 'Material detail page /m/ must be recognized');
+
+    mockWindow.location.pathname = '/u/0/c/ODY5MDkzOTQ4NDM5/a/NDc4MTY4/details';
+    assert.strictEqual(ctx.isDetailPageUrl(), true, 'Assignment detail page /a/.../details must be recognized');
   });
 
   console.log('\n====================================================');
