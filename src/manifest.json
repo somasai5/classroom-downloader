@@ -44,6 +44,18 @@
         "file:///*"
       ],
       "js": [
+        "content/route_interceptor.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "*://classroom.google.com/*",
+        "*://*/*test_classroom.html*",
+        "file:///*"
+      ],
+      "js": [
         "lib/jszip.min.js",
         "content/ui.js",
         "content/content.js"

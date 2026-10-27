@@ -101,6 +101,8 @@ async function runAllTests() {
     ctx.isSystemOrNavUrl = isSystemOrNavUrl;
     ctx.isDetailPageUrl = isDetailPageUrl;
     ctx.findPostContainers = findPostContainers;
+    ctx.isElementVisible = isElementVisible;
+    ctx.getAllPageAttachments = getAllPageAttachments;
   `);
   evalFunc(ctx, mockWindow, mockDocument, mockMutationObserver);
 
@@ -569,6 +571,36 @@ async function runAllTests() {
     assert.strictEqual(ctx.isDetailPageUrl(), true, 'Assignment detail page /a/.../details must be recognized');
   });
 
+  test('isElementVisible accurately rejects disconnected, aria-hidden, and display:none elements', () => {
+    // 1. Normal connected element
+    const visibleEl = {
+      isConnected: true,
+      closest: (sel) => null
+    };
+    assert.strictEqual(ctx.isElementVisible(visibleEl), true, 'Visible connected element should return true');
+
+    // 2. Disconnected element
+    const detachedEl = {
+      isConnected: false,
+      closest: () => null
+    };
+    assert.strictEqual(ctx.isElementVisible(detachedEl), false, 'Disconnected element must return false');
+
+    // 3. Element inside an aria-hidden container (Classroom inactive tabs / swapped views)
+    const hiddenEl = {
+      isConnected: true,
+      closest: (sel) => sel.includes('aria-hidden') ? { tagName: 'DIV' } : null
+    };
+    assert.strictEqual(ctx.isElementVisible(hiddenEl), false, 'Element inside aria-hidden must return false');
+
+    // 4. Element inside display: none container
+    const displayNoneEl = {
+      isConnected: true,
+      closest: (sel) => sel.includes('display: none') ? { tagName: 'DIV' } : null
+    };
+    assert.strictEqual(ctx.isElementVisible(displayNoneEl), false, 'Element inside display: none must return false');
+  });
+
   console.log('\n====================================================');
   console.log(`📊 FINAL RESULT: ${passCount} Passed, ${failCount} Failed`);
   if (failCount === 0) {
@@ -578,7 +610,7 @@ async function runAllTests() {
   }
   console.log('====================================================\n');
 
-  if (failCount > 0) process.exit(1);
+  process.exit(failCount > 0 ? 1 : 0);
 }
 
 runAllTests().catch(err => {
