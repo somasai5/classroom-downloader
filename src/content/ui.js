@@ -1,10 +1,10 @@
 // Classroom Suite - Injected UI & Modals
 window.ClassroomUI = {
-  // Create a 1-click download button for every individual attachment card
-  createSingleFileDownloadButton(fileInfo, onDownload) {
+  // Create a 1-click download button for every individual attachment card or inline text link
+  createSingleFileDownloadButton(fileInfo, onDownload, isInline = false) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'cqd-file-dl-btn';
+    btn.className = isInline ? 'cqd-file-dl-btn cqd-inline-dl-btn' : 'cqd-file-dl-btn';
     btn.setAttribute('data-cqd-download', 'true');
     btn.title = '1-Click Download: ' + fileInfo.title;
     btn.innerHTML = `

@@ -136,12 +136,14 @@
         // Continuous liveness heartbeat (350ms): instantly detects newly expanded/opened assignment cards without needing reload
         setInterval(() => {
           if (typeof document === 'undefined' || !document.body) return;
-          const cards = document.querySelectorAll(
-            '[aria-label*="Attachment" i], .attachment-card, [data-drive-id]'
+          const candidates = document.querySelectorAll(
+            '[aria-label*="Attachment" i], .attachment-card, [data-drive-id], a[href*="drive.google.com/file/d/"], a[href*="docs.google.com/document/"], a[href*="docs.google.com/presentation/"], a[href*="docs.google.com/spreadsheets/"]'
           );
-          for (let i = 0; i < cards.length; i++) {
-            const card = cards[i];
-            if (!card.querySelector('.cqd-file-dl-btn')) {
+          for (let i = 0; i < candidates.length; i++) {
+            const el = candidates[i];
+            const hasBtn = el.querySelector('.cqd-file-dl-btn') || 
+                           (el.nextElementSibling && el.nextElementSibling.classList && el.nextElementSibling.classList.contains('cqd-file-dl-btn'));
+            if (!hasBtn) {
               scanAndInject();
               break;
             }
@@ -353,16 +355,40 @@
     );
 
     candidates.forEach((el) => {
-      // Do not inject the bulky card button into plain text paragraphs
+      let href = el.getAttribute('href') || el.getAttribute('data-url') || el.getAttribute('data-href');
+      if (!href && el.getAttribute('data-drive-id')) {
+        href = 'https://drive.google.com/file/d/' + el.getAttribute('data-drive-id') + '/view';
+      }
+      if (!href) {
+        const innerA = el.querySelector('a[href]');
+        if (innerA) href = innerA.getAttribute('href');
+      }
+
+      // Check if this is an inline text link in a description or paragraph
       const isInlineTextLink = el.tagName === 'A' && 
                                (el.closest('.post-description, .tL92xf, .nfnrId, p') || el.textContent.trim().startsWith('http')) && 
                                !el.closest('[aria-label*="Attachment" i], .attachment-card, .VBEdtc-Wvd9cc, .P335nb, .bFjUmb-TvmHG');
-      if (isInlineTextLink) return;
+      if (isInlineTextLink) {
+        if (!href) return;
+        // Avoid duplicate button next to link
+        if (el.nextElementSibling && el.nextElementSibling.classList && el.nextElementSibling.classList.contains('cqd-file-dl-btn')) {
+          return;
+        }
+        const postTitle = (postData && postData.title) || courseTitle;
+        const fileInfo = resolveAttachmentLink(href, el, postTitle);
+        // Only inject for downloadable files (Drive, Docs, Sheets, Slides), not web links
+        if (fileInfo && fileInfo.extension !== 'link') {
+          const btn = window.ClassroomUI.createSingleFileDownloadButton(fileInfo, (file, btnEl) => {
+            handleDirectDownloadSingleFile(file, btnEl);
+          }, true);
+          el.insertAdjacentElement('afterend', btn);
+        }
+        return;
+      }
 
       const card = el.closest('[aria-label*="Attachment" i], .attachment-card, .VBEdtc-Wvd9cc, .P335nb, .bFjUmb-TvmHG') || el;
       if (card.querySelector('.cqd-file-dl-btn')) return;
 
-      let href = el.getAttribute('href') || el.getAttribute('data-url') || el.getAttribute('data-href');
       if (!href && card.getAttribute('data-drive-id')) {
         href = 'https://drive.google.com/file/d/' + card.getAttribute('data-drive-id') + '/view';
       }
@@ -383,7 +409,7 @@
       if (fileInfo && fileInfo.extension !== 'link') {
         const btn = window.ClassroomUI.createSingleFileDownloadButton(fileInfo, (file, btnEl) => {
           handleDirectDownloadSingleFile(file, btnEl);
-        });
+        }, false);
         card.style.position = 'relative';
         card.appendChild(btn);
       }
